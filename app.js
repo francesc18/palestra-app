@@ -54,6 +54,7 @@ function toast(msg) {
 
 const gSlug = (g) => String(g || "altro").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z]/g, "") || "altro";
 const gCls = (exId) => `g g-${gSlug(state.exercises.find((e) => e.id === exId)?.muscle_group)}`;
+const exImg = (id) => state.exercises.find((e) => e.id === id)?.image_url || "";
 const exName = (id) => state.exercises.find((e) => e.id === id)?.name ?? "Esercizio eliminato";
 const activeKey = () => `gym.active.${state.user?.id}`;
 const persistActive = () => {
@@ -568,6 +569,7 @@ function workoutHTML() {
     .map(
       (e, ei) => `<section class="card ${gCls(e.exercise_id)}">
       <div class="card-h"><h3>${esc(exName(e.exercise_id))}</h3><button class="link danger" data-act="w-del-ex" data-e="${ei}">Rimuovi</button></div>
+      ${exImg(e.exercise_id) ? `<details class="how"><summary>Come si fa</summary>${imgPairHTML(exImg(e.exercise_id), exName(e.exercise_id))}</details>` : ""}
       ${e.note ? `<p class="hint">${esc(e.note)}</p>` : ""}
       ${e.targets?.length ? `<p class="hint">Obiettivo ripetizioni: ${esc(e.targets.join(", "))}</p>` : ""}
       ${e.prev?.length ? `<p class="hint">${esc(e.prevLabel || "Ultima volta")}: ${e.prev.map((p) => `${kg(p.weight)} kg × ${p.reps}`).join(", ")}</p>` : ""}
@@ -605,12 +607,17 @@ function filteredExercises(q = state.q, g = state.group) {
     (e) => (!g || e.muscle_group === g) && (!s || e.name.toLowerCase().includes(s))
   );
 }
+// Le immagini incluse nell'app hanno due fotogrammi: "-0" (partenza) e "-1" (arrivo)
+function imgFrames(url) {
+  return /-0\.webp$/.test(url || "") ? [url, url.replace(/-0\.webp$/, "-1.webp")] : url ? [url] : [];
+}
 function exListHTML(list, act) {
   if (!list.length) return `<p class="empty">Nessun esercizio trovato. Prova con un altro nome o crea il tuo esercizio.</p>`;
   return list
     .map(
       (e) => `<button class="ex-item g g-${gSlug(e.muscle_group)}" data-act="${act}" data-id="${e.id}">
-        <span><b>${esc(e.name)}</b><small>${esc(e.muscle_group)}${e.equipment ? `, ${esc(e.equipment)}` : ""}</small></span>
+        ${e.image_url ? `<img class="ex-thumb" src="${esc(imgFrames(e.image_url)[0])}" alt="" loading="lazy">` : ""}
+        <span class="ex-txt"><b>${esc(e.name)}</b><small>${esc(e.muscle_group)}${e.equipment ? `, ${esc(e.equipment)}` : ""}</small></span>
         ${e.owner ? `<span class="tag">Tuo</span>` : ""}</button>`
     )
     .join("");
@@ -627,6 +634,15 @@ function exercisesHTML() {
     <button class="ghost wide" data-act="ex-new">Crea un tuo esercizio</button>`;
 }
 
+function imgPairHTML(url, name) {
+  const f = imgFrames(url);
+  if (!f.length) return "";
+  const labels = ["Partenza", "Arrivo"];
+  return `<div class="ex-imgs">${f
+    .map((s, i) => `<figure><img class="ex-img" src="${esc(s)}" alt="${esc(name)}${f.length > 1 ? ": " + labels[i].toLowerCase() : ""}" loading="lazy">${f.length > 1 ? `<figcaption>${labels[i]}</figcaption>` : ""}</figure>`)
+    .join("")}</div>`;
+}
+
 function exerciseHTML() {
   const v = state.view;
   if (!v.id)
@@ -640,7 +656,7 @@ function exerciseHTML() {
   const e = state.exercises.find((x) => x.id === v.id);
   if (!e) return `<p class="empty">Esercizio non trovato.</p>`;
   return `<article class="card">
-      ${e.image_url ? `<img class="ex-img" src="${esc(e.image_url)}" alt="Illustrazione: ${esc(e.name)}" loading="lazy">` : ""}
+      ${imgPairHTML(e.image_url, e.name)}
       <h3>${esc(e.name)}</h3>
       <div class="row"><span class="tag">${esc(e.muscle_group)}</span>${e.equipment ? `<span class="tag">${esc(e.equipment)}</span>` : ""}</div>
       <p>${esc(e.instructions || "Nessuna descrizione.")}</p>

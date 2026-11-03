@@ -56,4 +56,5 @@ Per provare subito senza conferma email: **Authentication** > **Sign In / Provid
 ## Aggiornare l'app e carattere dei titoli
 
 - Quando carichi una nuova versione su GitHub, ricordati di includere anche la cartella `fonts` (contiene il carattere dei titoli e dei numeri) e la cartella `icons`.
+- Le foto degli esercizi (cartella `images`) vengono dall'archivio free-exercise-db (github.com/yuhonas/free-exercise-db), di pubblico dominio (Unlicense). Ogni esercizio ha due foto, `nome-0.webp` (partenza) e `nome-1.webp` (arrivo); nel campo `image_url` va indicata la prima. Includi la cartella `images` quando carichi una nuova versione.
 - Il carattere è TeX Gyre Heros Cn Bold, distribuito con licenza GUST Font License, che ne permette l'uso e l'incorporazione nelle app.
