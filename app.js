@@ -527,6 +527,7 @@ function dayHTML() {
       .map(
         (it) => `<section class="card ${gCls(it.exercise_id)}">
         <h3>${esc(exName(it.exercise_id))}</h3>
+        ${exImg(it.exercise_id) ? `<details class="how"><summary>Come si fa</summary>${imgPairHTML(exImg(it.exercise_id), exName(it.exercise_id))}</details>` : ""}
         ${it.notes ? `<p class="hint">${esc(it.notes)}</p>` : ""}
         <p class="hint">${it.target_sets} serie, recupero ${it.rest_seconds} s${it.rep_targets ? `, obiettivo ${esc(it.rep_targets.split("|").map((s) => s.trim()).join(", "))}` : ""}</p>
         <label class="memo">Note<textarea rows="2" data-bind="memo" data-re="${it.id}" placeholder="Promemoria per questo esercizio">${esc(it.memo || "")}</textarea></label>
