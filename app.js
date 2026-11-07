@@ -608,8 +608,8 @@ function homeHTML() {
       <p>${allDone ? "Hai fatto tutti i giorni della settimana: ottimo lavoro." : "Il corpo cresce quando riposi. Se hai voglia, puoi allenarti lo stesso."}</p>
       <p class="hero-wk">${week}</p>
       <div class="hero-row">
-        <button class="hero-btn" data-act="start" data-id="${hd.id}" ${a ? "disabled" : ""}>Allenati lo stesso</button>
-        <button class="hero-lnk" data-act="open-program" data-id="${hp.id}">Scegli il giorno</button>
+        <button class="hero-btn" data-act="start" data-id="${hd.id}" ${a ? "disabled" : ""}>Allenati: ${esc(hd.name)}</button>
+        <button class="hero-lnk" data-act="open-program" data-id="${hp.id}">Altro giorno</button>
       </div></section>`;
   }
   h += `<div class="sec-h"><h2>Le tue schede</h2><button class="link" data-act="new-program">Nuova scheda</button></div>`;
@@ -649,6 +649,10 @@ function programHTML() {
             .join("")
         : `<p class="empty">Questa scheda non ha ancora giorni. Aggiungine uno.</p>`
     }
+    ${days.length ? `<button class="pcard extra" data-act="start" data-id="" ${state.active ? "disabled" : ""}>
+        <span class="ptile">${icon("star")}</span>
+        <span class="ptxt"><b>Allenamento extra</b><small>Scegli tu gli esercizi. Non cambia le settimane.</small></span>
+        <span class="chev" aria-hidden="true">›</span></button>` : ""}
     <button class="ghost wide" data-act="add-day">Aggiungi giorno</button>
     <div class="row"><button class="ghost" data-act="prog-edit">Modifica scheda</button><button class="danger-btn" data-act="prog-delete">Elimina scheda</button></div>`;
 }
