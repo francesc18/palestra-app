@@ -1412,4 +1412,14 @@ init();
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => navigator.serviceWorker.register("./sw.js").catch(() => {}));
+  // Quando arriva una versione nuova dell'app la carico subito, senza dover aprire l'app due volte.
+  // Durante un allenamento non ricarico (il timer si perderebbe): avviso e basta.
+  const hadController = !!navigator.serviceWorker.controller;
+  let reloaded = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (!hadController || reloaded) return;
+    if (state.active) return toast("Nuova versione pronta: riapri l'app a fine allenamento");
+    reloaded = true;
+    location.reload();
+  });
 }
