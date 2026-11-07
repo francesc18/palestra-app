@@ -1368,11 +1368,28 @@ document.addEventListener("change", (ev) => {
   }
 });
 
+// Un allenamento iniziato prima delle superserie non ha il gruppo: lo prende dalla scheda
+function syncActiveGroups() {
+  const a = state.active;
+  if (!a?.exercises) return;
+  const sup = {};
+  state.routines.forEach((r) => r.items.forEach((i) => (sup[i.id] = i.superset_id || null)));
+  let changed = false;
+  a.exercises.forEach((e) => {
+    if (e.group === undefined && e.reId && e.reId in sup) {
+      e.group = sup[e.reId];
+      changed = true;
+    }
+  });
+  if (changed) persistActive();
+}
+
 async function setUser(u) {
   state.user = u;
   if (u) {
     state.active = loadActive();
     try { await loadAll(); } catch (e) { console.error(e); toast("Non riesco a caricare i dati. Controlla la connessione."); }
+    syncActiveGroups();
   } else {
     state.active = null;
     state.view = null;
