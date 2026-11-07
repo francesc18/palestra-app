@@ -541,16 +541,13 @@ const gchips = (r) => {
   return g.length ? `<span class="gchips">${g.slice(0, 4).map((x) => `<span class="gchip g g-${gSlug(x)}"><i></i>${esc(x)}</span>`).join("")}${g.length > 4 ? `<span class="gchip more">+${g.length - 4}</span>` : ""}</span>` : "";
 };
 
-// scheda e giorno "di oggi": dopo l'ultimo giorno fatto tocca il successivo, poi si ricomincia
-function lastRunOf(days) {
-  return (state.lastRuns || []).find((w) => days.some((d) => d.id === w.routine_id));
-}
+// Giorno "di oggi": quello rimasto più indietro (settimana più bassa); a parità, il primo della scheda.
+// Così funziona anche se i giorni si fanno in ordine sparso.
 function nextDay(p) {
   const days = state.routines.filter((r) => r.program_id === p.id);
   if (!days.length) return null;
-  const last = lastRunOf(days);
-  const i = last ? days.findIndex((d) => d.id === last.routine_id) : -1;
-  return days[(i + 1) % days.length];
+  const low = Math.min(...days.map((d) => d.current_week));
+  return days.find((d) => d.current_week === low);
 }
 function heroProgram() {
   const last = (state.lastRuns || []).find((w) => state.routines.some((r) => r.id === w.routine_id));
