@@ -230,3 +230,8 @@ alter table public.routine_exercises
 
 -- Superserie: esercizi con lo stesso superset_id (consecutivi) si fanno insieme
 alter table public.routine_exercises add column if not exists superset_id uuid;
+
+-- Icona e colore delle schede, icona dei giorni
+alter table public.programs add column if not exists icon text not null default 'dumbbell';
+alter table public.programs add column if not exists color text not null default 'teal';
+alter table public.routines add column if not exists icon text;

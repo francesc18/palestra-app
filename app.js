@@ -192,6 +192,12 @@ async function loadAll() {
   }));
 }
 
+// Ultimi allenamenti, bastano giorno e data: servono a capire cosa tocca oggi
+async function loadLast() {
+  const { data } = await sb.from("workouts").select("routine_id,started_at").order("started_at", { ascending: false }).limit(40);
+  state.lastRuns = data || [];
+}
+
 async function loadHistory() {
   const [w, s] = await Promise.all([
     sb.from("workouts").select("*").order("started_at", { ascending: false }).limit(100),
@@ -206,7 +212,7 @@ async function saveRoutine(r) {
   const uid = state.user.id;
   let id = r.id;
   if (id) {
-    const u = await sb.from("routines").update({ name: r.name }).eq("id", id);
+    const u = await sb.from("routines").update({ name: r.name, icon: r.icon ?? null }).eq("id", id);
     if (u.error) throw u.error;
     const before = state.routines.find((x) => x.id === id)?.items.map((i) => i.id) ?? [];
     const keep = r.items.filter((i) => i.id).map((i) => i.id);
@@ -216,7 +222,7 @@ async function saveRoutine(r) {
       if (d.error) throw d.error;
     }
   } else {
-    const { data, error } = await sb.from("routines").insert({ name: r.name, user_id: uid, program_id: r.program_id }).select().single();
+    const { data, error } = await sb.from("routines").insert({ name: r.name, user_id: uid, program_id: r.program_id, icon: r.icon ?? null }).select().single();
     if (error) throw error;
     id = data.id;
   }
@@ -404,6 +410,7 @@ async function finishWorkout() {
   state.view = null;
   state.tab = "history";
   await loadHistory().catch(() => {});
+  await loadLast().catch(() => {});
   toast(msg);
   render();
 }
@@ -428,7 +435,8 @@ function render() {
   else if (v?.name === "import") { title = "Importa da Excel"; body = importHTML(); back = true; }
   else if (v?.name === "program") { title = state.programs.find((x) => x.id === v.id)?.name ?? "Scheda"; body = programHTML(); back = true; }
   else if (v?.name === "day") { title = state.routines.find((x) => x.id === v.id)?.name ?? "Giorno"; body = dayHTML(); back = true; }
-  else if (v?.name === "program-new") { title = "Nuova scheda"; body = programNewHTML(); back = true; }
+  else if (v?.name === "program-new") { title = "Nuova scheda"; body = programFormHTML(false); back = true; }
+  else if (v?.name === "program-edit") { title = "Modifica scheda"; body = programFormHTML(true); back = true; }
   else {
     const t = {
       home: ["Allenamento", homeHTML],
@@ -478,10 +486,76 @@ function goBack() {
     const pid = state.routines.find((x) => x.id === v.id)?.program_id;
     state.view = pid ? { name: "program", id: pid } : null;
   } else if (v?.name === "progress") state.view = { name: "day", id: v.id };
+  else if (v?.name === "program-edit") state.view = { name: "program", id: v.id };
   else if (v?.name === "routine")
     state.view = v.routine.id ? { name: "day", id: v.routine.id } : v.routine.program_id ? { name: "program", id: v.routine.program_id } : null;
   else state.view = null;
   render();
+}
+
+/* ------------------------------------------------------------------ */
+/* Icone e colori delle schede                                         */
+/* ------------------------------------------------------------------ */
+const PI = {
+  dumbbell: '<path d="M6.5 6.5v11M17.5 6.5v11M3.5 9v6M20.5 9v6M6.5 12h11"/>',
+  barbell: '<path d="M2.5 12h19M5 8v8M8 6v12M16 6v12M19 8v8"/>',
+  kettlebell: '<path d="M9 10.5V8a3 3 0 0 1 6 0v2.5"/><path d="M12 10.5a6.5 6.5 0 0 0-6 9 1 1 0 0 0 1 .5h10a1 1 0 0 0 1-.5 6.5 6.5 0 0 0-6-9z"/>',
+  flame: '<path d="M12 3c1 3.5 5 5.5 5 10a5 5 0 0 1-10 0c0-2 1-3 2-4 .3 1.5 1 2 2 2-.5-3 0-6 1-8z"/>',
+  bolt: '<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>',
+  heart: '<path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.4A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/>',
+  trophy: '<path d="M8 4h8v5a4 4 0 0 1-8 0zM8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4M12 13v4M9 20h6M10 17h4"/>',
+  target: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5"/>',
+  mountain: '<path d="m3 19 6-11 4 6 2-3 6 8z"/>',
+  timer: '<circle cx="12" cy="13" r="8"/><path d="M12 9v4l3 2M9 2h6"/>',
+  star: '<path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/>',
+  shield: '<path d="M12 3 5 6v6c0 4.5 3 7.5 7 9 4-1.5 7-4.5 7-9V6z"/>',
+};
+const COLORS = ["teal", "blue", "violet", "red", "amber", "green", "pink"];
+const icon = (k) =>
+  `<svg class="pi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${PI[k] || PI.dumbbell}</svg>`;
+const nEx = (n) => `${n} ${n === 1 ? "esercizio" : "esercizi"}`;
+const pc = (c) => `pc-${COLORS.includes(c) ? c : "teal"}`;
+
+function iconPickHTML(sel, withNone) {
+  return `<div class="pick-ic ${withNone ? "n7" : ""}" role="group" aria-label="Icona">${withNone ? `<button type="button" class="pk num ${!sel ? "on" : ""}" data-act="ic-pick" data-v="" aria-label="Solo il numero">1</button>` : ""}${Object.keys(PI)
+    .map((k) => `<button type="button" class="pk ${sel === k ? "on" : ""}" data-act="ic-pick" data-v="${k}" aria-label="${k}">${icon(k)}</button>`)
+    .join("")}</div>`;
+}
+const colorPickHTML = (sel) =>
+  `<div class="pick-col" role="group" aria-label="Colore">${COLORS.map((c) => `<button type="button" class="sw ${pc(c)} ${sel === c ? "on" : ""}" data-act="col-pick" data-v="${c}" aria-label="${c}"></button>`).join("")}</div>`;
+
+function programFormHTML(edit) {
+  const v = state.view;
+  return `<section class="phead ${pc(v.color)}"><span class="ptile big">${icon(v.icon)}</span><div><b>${esc(v.title.trim() || "Nome della scheda")}</b><small>Anteprima</small></div></section>
+    <label class="field">Nome della scheda<input data-bind="prog-name" value="${esc(v.title || "")}" placeholder="Es. Settembre, Massa, Forza" maxlength="60"></label>
+    <div class="field"><span class="lbl">Icona</span>${iconPickHTML(v.icon, false)}</div>
+    <div class="field"><span class="lbl">Colore</span>${colorPickHTML(v.color)}</div>
+    <button class="primary wide" data-act="${edit ? "prog-update" : "prog-create"}">${edit ? "Salva" : "Crea scheda"}</button>
+    ${edit ? "" : `<p class="hint">Dopo aver creato la scheda potrai aggiungere i giorni (Giorno 1, Giorno 2, ...) con i loro esercizi.</p>`}`;
+}
+
+// gruppi muscolari di un giorno, nell'ordine in cui compaiono
+const dayGroups = (r) => [...new Set(r.items.map((i) => state.exercises.find((e) => e.id === i.exercise_id)?.muscle_group).filter(Boolean))];
+const gchips = (r) => {
+  const g = dayGroups(r);
+  return g.length ? `<span class="gchips">${g.slice(0, 4).map((x) => `<span class="gchip g g-${gSlug(x)}"><i></i>${esc(x)}</span>`).join("")}${g.length > 4 ? `<span class="gchip more">+${g.length - 4}</span>` : ""}</span>` : "";
+};
+
+// scheda e giorno "di oggi": dopo l'ultimo giorno fatto tocca il successivo, poi si ricomincia
+function lastRunOf(days) {
+  return (state.lastRuns || []).find((w) => days.some((d) => d.id === w.routine_id));
+}
+function nextDay(p) {
+  const days = state.routines.filter((r) => r.program_id === p.id);
+  if (!days.length) return null;
+  const last = lastRunOf(days);
+  const i = last ? days.findIndex((d) => d.id === last.routine_id) : -1;
+  return days[(i + 1) % days.length];
+}
+function heroProgram() {
+  const last = (state.lastRuns || []).find((w) => state.routines.some((r) => r.id === w.routine_id));
+  const r = last && state.routines.find((x) => x.id === last.routine_id);
+  return state.programs.find((p) => p.id === r?.program_id) || state.programs.find((p) => state.routines.some((r2) => r2.program_id === p.id)) || null;
 }
 
 function homeHTML() {
@@ -490,15 +564,28 @@ function homeHTML() {
   if (a)
     h += `<section class="live"><div><strong>${esc(a.name)}${a.week ? `, settimana ${a.week}` : ""}</strong><span>iniziato alle ${fmtTime(a.startedAt)}</span></div>
       <button class="primary" data-act="resume">Riprendi</button></section>`;
+  const hp = heroProgram(), hd = hp && nextDay(hp);
+  if (hp && hd)
+    h += `<section class="hero ${pc(hp.color)}">
+      <span class="hero-ic">${icon(hd.icon || hp.icon)}</span>
+      <small class="hero-k">Oggi tocca</small>
+      <h2>${esc(hd.name)}</h2>
+      <p>${esc(hp.name)} · settimana ${hd.current_week} · ${nEx(hd.items.length)}</p>
+      ${gchips(hd)}
+      <div class="hero-row">
+        <button class="hero-btn" data-act="start" data-id="${hd.id}" ${a ? "disabled" : ""}>Inizia</button>
+        <button class="hero-lnk" data-act="open-program" data-id="${hp.id}">Apri scheda</button>
+      </div></section>`;
   h += `<div class="sec-h"><h2>Le tue schede</h2><button class="link" data-act="new-program">Nuova scheda</button></div>`;
   if (!state.programs.length)
     h += `<p class="empty">Non hai ancora nessuna scheda. Creane una, oppure importala da un file Excel.</p>`;
   h += state.programs
     .map((p) => {
       const days = state.routines.filter((r) => r.program_id === p.id);
-      return `<button class="ex-item" data-act="open-program" data-id="${p.id}">
-        <span><b>${esc(p.name)}</b><small>${days.length} ${days.length === 1 ? "giorno" : "giorni"}${days.length ? `: ${esc(days.map((d) => d.name).join(", "))}` : ""}</small></span>
-        <span aria-hidden="true">›</span></button>`;
+      return `<button class="pcard ${pc(p.color)}" data-act="open-program" data-id="${p.id}">
+        <span class="ptile">${icon(p.icon)}</span>
+        <span class="ptxt"><b>${esc(p.name)}</b><small>${days.length} ${days.length === 1 ? "giorno" : "giorni"}${days.length ? `: ${esc(days.map((d) => d.name).join(", "))}` : ""}</small></span>
+        <span class="chev" aria-hidden="true">›</span></button>`;
     })
     .join("");
   h += `<button class="ghost wide" data-act="start" data-id="" ${a ? "disabled" : ""}>Allenamento libero</button>`;
@@ -511,19 +598,23 @@ function programHTML() {
   const p = state.programs.find((x) => x.id === state.view.id);
   if (!p) return `<p class="empty">Scheda non trovata.</p>`;
   const days = state.routines.filter((r) => r.program_id === p.id);
-  return `${
-    days.length
-      ? days
-          .map(
-            (r) => `<button class="ex-item" data-act="open-day" data-id="${r.id}">
-        <span><b>${esc(r.name)}</b><small>Settimana ${r.current_week}, ${r.items.length} esercizi</small></span>
-        <span aria-hidden="true">›</span></button>`
-          )
-          .join("")
-      : `<p class="empty">Questa scheda non ha ancora giorni. Aggiungine uno.</p>`
-  }
+  const nx = nextDay(p);
+  return `<section class="phead ${pc(p.color)}"><span class="ptile big">${icon(p.icon)}</span><div><b>${esc(p.name)}</b><small>${days.length} ${days.length === 1 ? "giorno" : "giorni"}</small></div></section>
+    ${
+      days.length
+        ? days
+            .map(
+              (r, i) => `<button class="pcard dcard ${pc(p.color)}" data-act="open-day" data-id="${r.id}">
+        <span class="ptile ${r.icon ? "" : "num"}">${r.icon ? icon(r.icon) : i + 1}</span>
+        <span class="ptxt"><b>${esc(r.name)}${nx?.id === r.id ? ` <em class="badge">Oggi</em>` : ""}</b>
+          ${gchips(r)}<small>Settimana ${r.current_week}, ${nEx(r.items.length)}</small></span>
+        <span class="chev" aria-hidden="true">›</span></button>`
+            )
+            .join("")
+        : `<p class="empty">Questa scheda non ha ancora giorni. Aggiungine uno.</p>`
+    }
     <button class="ghost wide" data-act="add-day">Aggiungi giorno</button>
-    <div class="row"><button class="ghost" data-act="prog-rename">Rinomina scheda</button><button class="danger-btn" data-act="prog-delete">Elimina scheda</button></div>`;
+    <div class="row"><button class="ghost" data-act="prog-edit">Modifica scheda</button><button class="danger-btn" data-act="prog-delete">Elimina scheda</button></div>`;
 }
 
 // Raggruppa gli esercizi consecutivi con la stessa chiave (superserie / dropset)
@@ -575,12 +666,6 @@ function dayHTML() {
       .join("")}`;
 }
 
-function programNewHTML() {
-  return `<label class="field">Nome della scheda<input data-bind="prog-name" value="${esc(state.view.title || "")}" placeholder="Es. Settembre, Massa, Forza" maxlength="60"></label>
-    <button class="primary wide" data-act="prog-create">Crea scheda</button>
-    <p class="hint">Dopo aver creato la scheda potrai aggiungere i giorni (Giorno 1, Giorno 2, ...) con i loro esercizi.</p>`;
-}
-
 function routineItemHTML(it, i, k = -1) {
   return `<div class="ritem">
         <div class="card-h"><h3>${k >= 0 ? ltr(k) : ""}${esc(exName(it.exercise_id))}</h3>
@@ -596,6 +681,7 @@ function routineHTML() {
   const r = state.view.routine;
   return `
     <label class="field">Nome del giorno<input data-bind="r-name" value="${esc(r.name)}" placeholder="Es. Giorno 1, Push, Gambe" maxlength="60"></label>
+    <div class="field"><span class="lbl">Icona del giorno</span>${iconPickHTML(r.icon, true)}</div>
     ${blocksOf(r.items)
       .map((b, bi) => {
         const first = b[0].i, last = b[b.length - 1].i;
@@ -888,12 +974,12 @@ document.addEventListener("click", (ev) => {
     /* home e schede */
     case "resume": state.view = { name: "workout" }; render(); break;
     case "start": guard(() => startWorkout(d.id || null)); break;
-    case "new-program": state.view = { name: "program-new", title: "" }; render(); break;
+    case "new-program": state.view = { name: "program-new", title: "", icon: "dumbbell", color: COLORS[state.programs.length % COLORS.length] }; render(); break;
     case "prog-create": {
       const name = (v.title || "").trim();
       if (!name) return toast("Dai un nome alla scheda");
       guard(async () => {
-        const { data, error } = await sb.from("programs").insert({ name, user_id: state.user.id }).select().single();
+        const { data, error } = await sb.from("programs").insert({ name, user_id: state.user.id, icon: v.icon, color: v.color }).select().single();
         if (error) throw error;
         await loadAll();
         state.view = { name: "program", id: data.id };
@@ -903,18 +989,26 @@ document.addEventListener("click", (ev) => {
     }
     case "open-program": state.view = { name: "program", id: d.id }; render(); break;
     case "open-day": state.view = { name: "day", id: d.id }; render(); break;
-    case "prog-rename": {
+    case "prog-edit": {
       const p = state.programs.find((x) => x.id === v.id);
-      const nm = (prompt("Nuovo nome della scheda", p.name) || "").trim();
-      if (!nm || nm === p.name) break;
+      state.view = { name: "program-edit", id: p.id, title: p.name, icon: p.icon || "dumbbell", color: p.color || "teal" };
+      render();
+      break;
+    }
+    case "prog-update": {
+      const nm = (v.title || "").trim();
+      if (!nm) return toast("Dai un nome alla scheda");
       guard(async () => {
-        const { error } = await sb.from("programs").update({ name: nm }).eq("id", p.id);
+        const { error } = await sb.from("programs").update({ name: nm, icon: v.icon, color: v.color }).eq("id", v.id);
         if (error) throw error;
-        p.name = nm;
+        await loadAll();
+        state.view = { name: "program", id: v.id };
         render();
       });
       break;
     }
+    case "ic-pick": if (v.name === "routine") v.routine.icon = d.v || null; else v.icon = d.v; render(); break;
+    case "col-pick": v.color = d.v; render(); break;
     case "prog-delete": {
       const p = state.programs.find((x) => x.id === v.id);
       if (!confirm(`Eliminare la scheda «${p.name}» con tutti i suoi giorni e i carichi? Lo storico degli allenamenti resta.`)) return;
@@ -933,7 +1027,7 @@ document.addEventListener("click", (ev) => {
       break;
     case "edit-routine": {
       const r = state.routines.find((x) => x.id === d.id);
-      state.view = { name: "routine", routine: { id: r.id, program_id: r.program_id, name: r.name, items: r.items.map((i) => ({ ...i })) } };
+      state.view = { name: "routine", routine: { id: r.id, program_id: r.program_id, name: r.name, icon: r.icon || null, items: r.items.map((i) => ({ ...i })) } };
       render();
       break;
     }
@@ -1126,7 +1220,7 @@ document.addEventListener("input", (ev) => {
     case "w-set": state.active.exercises[d.e].sets[d.s][d.f] = el.value; persistActive(); break;
     case "w-rest": grpOf(Number(d.e)).forEach((m) => (state.active.exercises[m].rest = Math.max(0, Math.round(num(el.value))))); persistActive(); break;
     case "memo": setMemo(d.re, el.value); break;
-    case "prog-name": state.view.title = el.value; break;
+    case "prog-name": state.view.title = el.value; { const b = document.querySelector(".phead b"); if (b) b.textContent = el.value.trim() || "Nome della scheda"; } break;
     case "imp-prog": state.view.programName = el.value; break;
     case "imp-name": state.view.routines[d.r].name = el.value; break;
     case "imp-week": state.view.routines[d.r].startWeek = Math.max(1, Math.round(num(el.value)) || 1); break;
@@ -1389,6 +1483,7 @@ async function setUser(u) {
   if (u) {
     state.active = loadActive();
     try { await loadAll(); } catch (e) { console.error(e); toast("Non riesco a caricare i dati. Controlla la connessione."); }
+    await loadLast().catch(() => {});
     syncActiveGroups();
   } else {
     state.active = null;
