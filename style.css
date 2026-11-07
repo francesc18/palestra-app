@@ -332,3 +332,31 @@ table.grid .cur { background: var(--accent-soft); }
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }
+
+/* ---------- Superserie ---------- */
+.card.sup { border-left-width: 6px; }
+.sup-tag { display: inline-block; font-size: 12px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; color: var(--accent); background: var(--accent-soft); padding: 3px 10px; border-radius: 999px; justify-self: start; width: fit-content; }
+.sup-ex { border-top: 1px solid var(--line); padding-top: 12px; display: grid; gap: 8px; }
+.sup-ex:first-of-type { border-top: 0; padding-top: 0; }
+.ritem { display: grid; gap: 8px; }
+.card.sup .ritem + .ritem { border-top: 1px solid var(--line); padding-top: 12px; }
+.ltr { font-style: normal; display: inline-grid; place-items: center; width: 26px; height: 26px; margin-right: 8px; border-radius: 8px; background: var(--accent); color: var(--accent-ink); font-family: var(--display); font-size: 17px; vertical-align: 3px; }
+.set.g2, .set-h.g2 { grid-template-columns: 34px 1fr 58px; }
+.set.g2 { align-items: stretch; }
+.set.g2 .n { align-self: center; }
+.set.g2 .check { height: auto; min-height: 58px; align-self: stretch; }
+.gin { display: grid; gap: 8px; }
+.gl { display: grid; grid-template-columns: 30px 1fr 1fr; gap: 8px; align-items: center; }
+.gl .ltr { margin: 0; width: 28px; height: 28px; }
+.set.g2.done .gl .ltr { background: var(--accent); }
+.set.g2.done input { background: var(--accent-soft); color: var(--accent); }
+.set.g2.done .n { color: var(--accent); }
+.set.g2.done .check { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+
+/* ---------- Tabella obiettivo / settimana precedente ---------- */
+.pt { width: 100%; border-collapse: collapse; font-size: 14px; background: var(--surface-2); border-radius: 12px; overflow: hidden; }
+.pt th { text-align: left; font-size: 12px; font-weight: 700; color: var(--muted); padding: 8px 10px; border-bottom: 1px solid var(--line); }
+.pt td { padding: 7px 10px; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+.pt tr:last-child td { border-bottom: 0; }
+.pt td:first-child, .pt th:first-child { width: 48px; color: var(--muted); }
+.pt td:nth-child(2) { width: 34%; }

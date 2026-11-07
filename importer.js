@@ -127,7 +127,7 @@ export function parseWorkbook(XLSX, buf, exercises) {
     }
 
     const items = [];
-    for (const b of blocks) {
+    for (const [bi, b] of blocks.entries()) {
       // "PUSH DOWN FUNE+CURL ASTA EZ" -> due esercizi in superset
       const names = b.raw.includes("+") ? b.raw.split("+").map((s) => s.trim()).filter(Boolean) : [b.raw];
       const split = names.length > 1;
@@ -154,6 +154,7 @@ export function parseWorkbook(XLSX, buf, exercises) {
           sets: b.sets.length,
           labels,
           weeks,
+          group: split ? `${sheetName}#${bi}` : null,
         });
       });
     }

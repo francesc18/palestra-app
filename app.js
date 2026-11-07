@@ -76,6 +76,22 @@ const loadActive = () => {
 /* ------------------------------------------------------------------ */
 let timerEnd = 0, timerTotal = 0, timerInt = null, audioCtx = null;
 
+// Indici degli esercizi dell'allenamento che stanno nella stessa superserie
+const grpOf = (ei) => {
+  const ex = state.active.exercises, g = ex[ei].group;
+  if (!g) return [ei];
+  let a = ei, b = ei;
+  while (a > 0 && ex[a - 1].group === g) a--;
+  while (b < ex.length - 1 && ex[b + 1].group === g) b++;
+  return Array.from({ length: b - a + 1 }, (_, k) => a + k);
+};
+// una superserie con un solo esercizio non ha senso: torna esercizio singolo
+function cleanGroups(items) {
+  const n = {};
+  items.forEach((it) => it.superset_id && (n[it.superset_id] = (n[it.superset_id] || 0) + 1));
+  items.forEach((it) => { if (it.superset_id && n[it.superset_id] < 2) it.superset_id = null; });
+}
+
 function startTimer(sec) {
   try {
     audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
@@ -214,6 +230,7 @@ async function saveRoutine(r) {
     rest_seconds: it.rest_seconds,
     rep_targets: it.rep_targets ?? null,
     notes: it.notes ?? null,
+    superset_id: it.superset_id ?? null,
   });
   const existing = r.items.map((it, i) => ({ it, i })).filter((x) => x.it.id);
   const added = r.items.map((it, i) => ({ it, i })).filter((x) => !x.it.id);
@@ -275,6 +292,7 @@ async function startWorkout(routineId) {
     return {
       exercise_id: it.exercise_id,
       reId: it.id,
+      group: it.superset_id || null,
       rest: it.rest_seconds,
       targets,
       note: it.notes || "",
@@ -508,6 +526,27 @@ function programHTML() {
     <div class="row"><button class="ghost" data-act="prog-rename">Rinomina scheda</button><button class="danger-btn" data-act="prog-delete">Elimina scheda</button></div>`;
 }
 
+// Raggruppa gli esercizi consecutivi con la stessa chiave (superserie / dropset)
+function blocksOf(list, key = "superset_id") {
+  const out = [];
+  list.forEach((it, i) => {
+    const last = out[out.length - 1];
+    if (it[key] && last && last[0].it[key] === it[key]) last.push({ it, i });
+    else out.push([{ it, i }]);
+  });
+  return out;
+}
+const LTR = ["A", "B", "C", "D", "E", "F"];
+const ltr = (k) => `<i class="ltr">${LTR[k]}</i>`;
+
+function dayExHTML(it, k = -1, showNote = true) {
+  return `<h3>${k >= 0 ? ltr(k) : ""}${esc(exName(it.exercise_id))}</h3>
+        ${exImg(it.exercise_id) ? `<details class="how"><summary>Come si fa</summary>${imgPairHTML(exImg(it.exercise_id), exName(it.exercise_id))}</details>` : ""}
+        ${showNote && it.notes ? `<p class="hint">${esc(it.notes)}</p>` : ""}
+        <p class="hint">${it.target_sets} serie, recupero ${it.rest_seconds} s${it.rep_targets ? `, obiettivo ${esc(it.rep_targets.split("|").map((s) => s.trim()).join(", "))}` : ""}</p>
+        <label class="memo">Note<textarea rows="2" data-bind="memo" data-re="${it.id}" placeholder="Promemoria per questo esercizio">${esc(it.memo || "")}</textarea></label>`;
+}
+
 function dayHTML() {
   const r = state.routines.find((x) => x.id === state.view.id);
   if (!r) return `<p class="empty">Giorno non trovato.</p>`;
@@ -523,14 +562,14 @@ function dayHTML() {
       <div class="row"><button class="ghost" data-act="progress" data-id="${r.id}">Progressi</button><button class="ghost" data-act="edit-routine" data-id="${r.id}">Modifica giorno</button></div>
     </section>
     ${r.notes ? `<section class="card"><p class="hint" style="white-space:pre-line">${esc(r.notes)}</p></section>` : ""}
-    ${r.items
-      .map(
-        (it) => `<section class="card ${gCls(it.exercise_id)}">
-        <h3>${esc(exName(it.exercise_id))}</h3>
-        ${exImg(it.exercise_id) ? `<details class="how"><summary>Come si fa</summary>${imgPairHTML(exImg(it.exercise_id), exName(it.exercise_id))}</details>` : ""}
-        ${it.notes ? `<p class="hint">${esc(it.notes)}</p>` : ""}
-        <p class="hint">${it.target_sets} serie, recupero ${it.rest_seconds} s${it.rep_targets ? `, obiettivo ${esc(it.rep_targets.split("|").map((s) => s.trim()).join(", "))}` : ""}</p>
-        <label class="memo">Note<textarea rows="2" data-bind="memo" data-re="${it.id}" placeholder="Promemoria per questo esercizio">${esc(it.memo || "")}</textarea></label>
+    ${blocksOf(r.items)
+      .map((b) =>
+        b.length === 1
+          ? `<section class="card ${gCls(b[0].it.exercise_id)}">${dayExHTML(b[0].it)}</section>`
+          : `<section class="card sup ${gCls(b[0].it.exercise_id)}">
+        <span class="sup-tag">Superserie</span>
+        ${b.every((x) => x.it.notes === b[0].it.notes) && b[0].it.notes ? `<p class="hint">${esc(b[0].it.notes)}</p>` : ""}
+        ${b.map((x, k) => `<div class="sup-ex">${dayExHTML(x.it, k, !b.every((y) => y.it.notes === b[0].it.notes))}</div>`).join("")}
       </section>`
       )
       .join("")}`;
@@ -542,39 +581,76 @@ function programNewHTML() {
     <p class="hint">Dopo aver creato la scheda potrai aggiungere i giorni (Giorno 1, Giorno 2, ...) con i loro esercizi.</p>`;
 }
 
-function routineHTML() {
-  const r = state.view.routine;
-  return `
-    <label class="field">Nome del giorno<input data-bind="r-name" value="${esc(r.name)}" placeholder="Es. Giorno 1, Push, Gambe" maxlength="60"></label>
-    ${r.items
-      .map(
-        (it, i) => `<section class="card">
-        <div class="card-h"><h3>${esc(exName(it.exercise_id))}</h3>
-          <span>${i > 0 ? `<button class="link" data-act="r-up" data-i="${i}" aria-label="Sposta su">Su</button>` : ""}
-          <button class="link danger" data-act="r-del-ex" data-i="${i}">Rimuovi</button></span></div>
+function routineItemHTML(it, i, k = -1) {
+  return `<div class="ritem">
+        <div class="card-h"><h3>${k >= 0 ? ltr(k) : ""}${esc(exName(it.exercise_id))}</h3>
+          <button class="link danger" data-act="r-del-ex" data-i="${i}">Rimuovi</button></div>
         <div class="trio">
           <label>Serie<input type="number" inputmode="numeric" min="1" value="${it.target_sets}" data-bind="r-item" data-i="${i}" data-f="target_sets"></label>
           <label>Ripetizioni<input type="number" inputmode="numeric" min="1" value="${it.target_reps}" data-bind="r-item" data-i="${i}" data-f="target_reps"></label>
           <label>Recupero (s)<input type="number" inputmode="numeric" min="0" step="5" value="${it.rest_seconds}" data-bind="r-item" data-i="${i}" data-f="rest_seconds"></label>
-        </div></section>`
-      )
+        </div></div>`;
+}
+
+function routineHTML() {
+  const r = state.view.routine;
+  return `
+    <label class="field">Nome del giorno<input data-bind="r-name" value="${esc(r.name)}" placeholder="Es. Giorno 1, Push, Gambe" maxlength="60"></label>
+    ${blocksOf(r.items)
+      .map((b, bi) => {
+        const first = b[0].i, last = b[b.length - 1].i;
+        const up = bi > 0 ? `<button class="link" data-act="r-up" data-i="${first}" aria-label="Sposta su">Su</button>` : "";
+        return b.length === 1
+          ? `<section class="card">${routineItemHTML(b[0].it, first)}
+        <div class="row">${up}<button class="ghost" data-act="r-pair" data-i="${last}">+ Abbina un esercizio</button></div></section>`
+          : `<section class="card sup">
+        <div class="card-h"><span class="sup-tag">Superserie</span>${up}</div>
+        ${b.map((x, k) => routineItemHTML(x.it, x.i, k)).join("")}
+        <div class="row"><button class="ghost" data-act="r-pair" data-i="${last}">+ Altro esercizio</button><button class="ghost" data-act="r-split" data-i="${first}">Separa</button></div></section>`;
+      })
       .join("")}
     <button class="ghost wide" data-act="r-add-ex">Aggiungi esercizio</button>
     <button class="primary wide" data-act="r-save">Salva giorno</button>
     ${r.id ? `<button class="danger-btn wide" data-act="r-delete">Elimina giorno</button>` : ""}`;
 }
 
+// Tabella: serie / obiettivo / settimana precedente
+function prevTableHTML(e) {
+  if (!e.targets?.length && !e.prev?.length) return "";
+  const tg = (i) => e.targets?.[i] ?? e.targets?.[e.targets.length - 1] ?? "";
+  const rows = e.sets
+    .map((_, i) => {
+      const p = e.prev?.[i];
+      return `<tr><td>${i + 1}</td><td>${tg(i) ? esc(tg(i)) : "–"}</td><td>${p ? `<b>${kg(p.weight)}</b> kg × ${p.reps}` : "–"}</td></tr>`;
+    })
+    .join("");
+  return `<table class="pt"><thead><tr><th>Serie</th><th>Obiettivo</th><th>${esc(e.prevLabel || "Ultima volta")}</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+function exHeadHTML(e, ei, k = -1) {
+  return `<div class="card-h"><h3>${k >= 0 ? ltr(k) : ""}${esc(exName(e.exercise_id))}</h3><button class="link danger" data-act="w-del-ex" data-e="${ei}">Rimuovi</button></div>
+      ${exImg(e.exercise_id) ? `<details class="how"><summary>Come si fa</summary>${imgPairHTML(exImg(e.exercise_id), exName(e.exercise_id))}</details>` : ""}
+      ${prevTableHTML(e)}
+      ${e.reId ? `<label class="memo">Note<textarea rows="2" data-bind="memo" data-re="${e.reId}" placeholder="Promemoria per questo esercizio">${esc(e.memo)}</textarea></label>` : ""}`;
+}
+
+function setBtnsHTML(ei, rest, canDel) {
+  return `<div class="row">
+        <button class="ghost" data-act="w-add-set" data-e="${ei}">+ Serie</button>
+        ${canDel ? `<button class="ghost" data-act="w-del-set" data-e="${ei}">− Serie</button>` : ""}
+        <label class="rest">Recupero <input type="number" inputmode="numeric" min="0" step="5" value="${rest}" data-bind="w-rest" data-e="${ei}"> s</label>
+      </div>`;
+}
+
 function workoutHTML() {
   const a = state.active;
-  const list = a.exercises
-    .map(
-      (e, ei) => `<section class="card ${gCls(e.exercise_id)}">
-      <div class="card-h"><h3>${esc(exName(e.exercise_id))}</h3><button class="link danger" data-act="w-del-ex" data-e="${ei}">Rimuovi</button></div>
-      ${exImg(e.exercise_id) ? `<details class="how"><summary>Come si fa</summary>${imgPairHTML(exImg(e.exercise_id), exName(e.exercise_id))}</details>` : ""}
+  const list = blocksOf(a.exercises, "group")
+    .map((b) => {
+      if (b.length === 1) {
+        const e = b[0].it, ei = b[0].i;
+        return `<section class="card ${gCls(e.exercise_id)}">
+      ${exHeadHTML(e, ei)}
       ${e.note ? `<p class="hint">${esc(e.note)}</p>` : ""}
-      ${e.targets?.length ? `<p class="hint">Obiettivo ripetizioni: ${esc(e.targets.join(", "))}</p>` : ""}
-      ${e.prev?.length ? `<p class="hint">${esc(e.prevLabel || "Ultima volta")}: ${e.prev.map((p) => `${kg(p.weight)} kg × ${p.reps}`).join(", ")}</p>` : ""}
-      ${e.reId ? `<label class="memo">Note<textarea rows="2" data-bind="memo" data-re="${e.reId}" placeholder="Promemoria per questo esercizio">${esc(e.memo)}</textarea></label>` : ""}
       <div class="sets">
         <div class="set-h"><span>Serie</span><span>Peso (kg)</span><span>Ripetizioni</span><span></span></div>
         ${e.sets
@@ -588,12 +664,37 @@ function workoutHTML() {
           )
           .join("")}
       </div>
-      <div class="row">
-        <button class="ghost" data-act="w-add-set" data-e="${ei}">+ Serie</button>
-        ${e.sets.length > 1 ? `<button class="ghost" data-act="w-del-set" data-e="${ei}">− Serie</button>` : ""}
-        <label class="rest">Recupero <input type="number" inputmode="numeric" min="0" step="5" value="${e.rest}" data-bind="w-rest" data-e="${ei}"> s</label>
-      </div></section>`
-    )
+      ${setBtnsHTML(ei, e.rest, e.sets.length > 1)}</section>`;
+      }
+      // superserie: gli esercizi si alternano serie per serie, un solo ✓ per serie
+      const n = Math.max(...b.map((x) => x.it.sets.length));
+      const first = b[0].i;
+      const note = b[0].it.note && b.every((x) => x.it.note === b[0].it.note) ? b[0].it.note : "";
+      return `<section class="card sup ${gCls(b[0].it.exercise_id)}">
+      <span class="sup-tag">Superserie</span>
+      ${note ? `<p class="hint">${esc(note)}</p>` : ""}
+      ${b.map((x, k) => `<div class="sup-ex">${exHeadHTML(x.it, x.i, k)}</div>`).join("")}
+      <div class="sets">
+        <div class="set-h g2"><span>Serie</span><span>Peso (kg) e ripetizioni</span><span></span></div>
+        ${Array.from({ length: n }, (_, si) => {
+          const done = b.every((x) => !x.it.sets[si] || x.it.sets[si].done);
+          return `<div class="set g2 ${done ? "done" : ""}">
+          <span class="n">${si + 1}</span>
+          <div class="gin">${b
+            .map((x, k) => {
+              const s = x.it.sets[si];
+              if (!s) return "";
+              return `<div class="gl">${ltr(k)}
+            <input type="number" inputmode="decimal" step="any" min="0" placeholder="0" value="${esc(s.weight)}" data-bind="w-set" data-e="${x.i}" data-s="${si}" data-f="weight" aria-label="Peso ${LTR[k]} serie ${si + 1}">
+            <input type="number" inputmode="numeric" min="0" placeholder="0" value="${esc(s.reps)}" data-bind="w-set" data-e="${x.i}" data-s="${si}" data-f="reps" aria-label="Ripetizioni ${LTR[k]} serie ${si + 1}"></div>`;
+            })
+            .join("")}</div>
+          <button class="check" data-act="w-check" data-e="${first}" data-s="${si}" aria-pressed="${done}" aria-label="Serie ${si + 1} completata">✓</button>
+        </div>`;
+        }).join("")}
+      </div>
+      ${setBtnsHTML(first, Math.max(...b.map((x) => x.it.rest || 0)), n > 1)}</section>`;
+    })
     .join("");
   return `${a.notes ? `<section class="card"><p class="hint" style="white-space:pre-line">${esc(a.notes)}</p></section>` : ""}
     ${list || `<p class="empty">Allenamento libero: aggiungi gli esercizi che vuoi fare.</p>`}
@@ -842,11 +943,33 @@ document.addEventListener("click", (ev) => {
         render();
       });
       break;
-    case "r-del-ex": v.routine.items.splice(Number(d.i), 1); render(); break;
+    case "r-del-ex": v.routine.items.splice(Number(d.i), 1); cleanGroups(v.routine.items); render(); break;
     case "r-up": {
-      const i = Number(d.i), it = v.routine.items;
-      [it[i - 1], it[i]] = [it[i], it[i - 1]];
+      const bl = blocksOf(v.routine.items);
+      const bi = bl.findIndex((b) => b[0].i === Number(d.i));
+      if (bi > 0) {
+        [bl[bi - 1], bl[bi]] = [bl[bi], bl[bi - 1]];
+        v.routine.items = bl.flat().map((x) => x.it);
+      }
       render();
+      break;
+    }
+    case "r-split": {
+      const g = v.routine.items[Number(d.i)].superset_id;
+      v.routine.items.forEach((it) => { if (it.superset_id === g) it.superset_id = null; });
+      render();
+      break;
+    }
+    case "r-pair": {
+      // aggiunge un esercizio subito dopo, nella stessa superserie
+      const at = Number(d.i);
+      openPicker((id) => {
+        const items = v.routine.items, base = items[at];
+        const g = base.superset_id || crypto.randomUUID();
+        base.superset_id = g;
+        items.splice(at + 1, 0, { exercise_id: id, target_sets: base.target_sets, target_reps: 10, rest_seconds: base.rest_seconds, superset_id: g });
+        render();
+      });
       break;
     }
     case "r-save":
@@ -890,22 +1013,26 @@ document.addEventListener("click", (ev) => {
 
     /* allenamento in corso */
     case "w-check": {
-      const s = a.exercises[d.e].sets[d.s];
-      s.done = !s.done;
+      // una superserie ha un solo ✓ per serie: vale per tutti gli esercizi del gruppo
+      const mem = grpOf(Number(d.e)).filter((m) => a.exercises[m].sets[d.s]);
+      const done = !mem.every((m) => a.exercises[m].sets[d.s].done);
+      mem.forEach((m) => (a.exercises[m].sets[d.s].done = done));
       persistActive();
-      if (s.done) startTimer(a.exercises[d.e].rest || 90);
+      if (done) startTimer(Math.max(...mem.map((m) => a.exercises[m].rest || 0)) || 90);
       else stopTimer();
       render();
       break;
     }
     case "w-add-set": {
-      const ex = a.exercises[d.e], last = ex.sets[ex.sets.length - 1];
-      ex.sets.push({ weight: last?.weight ?? "", reps: last?.reps ?? "10", done: false });
+      grpOf(Number(d.e)).forEach((m) => {
+        const ex = a.exercises[m], last = ex.sets[ex.sets.length - 1];
+        ex.sets.push({ weight: last?.weight ?? "", reps: last?.reps ?? "10", done: false });
+      });
       persistActive();
       render();
       break;
     }
-    case "w-del-set": a.exercises[d.e].sets.pop(); persistActive(); render(); break;
+    case "w-del-set": grpOf(Number(d.e)).forEach((m) => { if (a.exercises[m].sets.length > 1) a.exercises[m].sets.pop(); }); persistActive(); render(); break;
     case "w-del-ex": a.exercises.splice(Number(d.e), 1); persistActive(); render(); break;
     case "w-add-ex": openPicker((id) => addExerciseToWorkout(id)); break;
     case "w-finish": guard(finishWorkout); break;
@@ -997,7 +1124,7 @@ document.addEventListener("input", (ev) => {
     case "r-name": state.view.routine.name = el.value; break;
     case "r-item": state.view.routine.items[d.i][d.f] = Math.max(0, Math.round(num(el.value))); break;
     case "w-set": state.active.exercises[d.e].sets[d.s][d.f] = el.value; persistActive(); break;
-    case "w-rest": state.active.exercises[d.e].rest = Math.max(0, Math.round(num(el.value))); persistActive(); break;
+    case "w-rest": grpOf(Number(d.e)).forEach((m) => (state.active.exercises[m].rest = Math.max(0, Math.round(num(el.value))))); persistActive(); break;
     case "memo": setMemo(d.re, el.value); break;
     case "prog-name": state.view.title = el.value; break;
     case "imp-prog": state.view.programName = el.value; break;
@@ -1170,6 +1297,7 @@ async function saveImport() {
       const ro = await sb.from("routines").insert({ name: r.name.trim(), user_id: uid, program_id: programId, notes: r.notes || null, current_week: r.startWeek }).select().single();
       if (ro.error) throw ro.error;
       createdRoutines.push(ro.data.id);
+      const gmap = {};
       const rows = r.items.map((it, i) => ({
         routine_id: ro.data.id,
         user_id: uid,
@@ -1180,6 +1308,7 @@ async function saveImport() {
         rest_seconds: it.rest,
         rep_targets: it.labels.join(" | "),
         notes: it.raw,
+        superset_id: it.group ? (gmap[it.group] ||= crypto.randomUUID()) : null,
       }));
       const ins = await sb.from("routine_exercises").insert(rows).select("id,position");
       if (ins.error) throw ins.error;

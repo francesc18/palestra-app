@@ -227,3 +227,6 @@ create index on public.routines (program_id);
 
 alter table public.routine_exercises
   add column memo text;
+
+-- Superserie: esercizi con lo stesso superset_id (consecutivi) si fanno insieme
+alter table public.routine_exercises add column if not exists superset_id uuid;
