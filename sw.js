@@ -1,13 +1,19 @@
 // Service worker: salva in cache i file dell'app così si apre subito anche senza rete.
 // I dati (schede, allenamenti) vengono sempre letti da Supabase e non passano da qui.
-const CACHE = "palestra-v11";
+const CACHE = "palestra-v12";
 const SHELL = [
   "./", "index.html", "style.css", "app.js", "importer.js", "config.js",
   "manifest.webmanifest", "fonts/display-bold.woff", "icons/icon.svg", "icons/icon-192.png", "icons/icon-512.png"
 ];
 
 self.addEventListener("install", (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  // cache: "reload" salta la copia temporanea del browser (GitHub Pages la tiene 10 minuti): si scaricano i file veri
+  e.waitUntil(
+    caches
+      .open(CACHE)
+      .then((c) => Promise.all(SHELL.map((u) => fetch(u, { cache: "reload" }).then((r) => { if (!r.ok) throw new Error(u); return c.put(u, r); }))))
+      .then(() => self.skipWaiting())
+  );
 });
 
 self.addEventListener("activate", (e) => {
@@ -30,7 +36,7 @@ self.addEventListener("fetch", (e) => {
   e.respondWith(
     caches.open(CACHE).then(async (cache) => {
       const cached = await cache.match(req);
-      const network = fetch(req)
+      const network = fetch(req, { cache: "no-cache" })
         .then((res) => {
           if (res && res.ok) cache.put(req, res.clone());
           return res;

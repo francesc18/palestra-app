@@ -895,6 +895,10 @@ function profileHTML() {
       <h3>Account</h3><p class="hint">${esc(state.user.email)}</p>
       <button class="ghost wide" data-act="logout">Esci</button></section>
     <section class="card">
+      <h3>Aggiornamenti</h3>
+      <p class="hint">Se non vedi le novità dell'app, tocca qui: scarica di nuovo tutti i file. I tuoi dati non si toccano.</p>
+      <button class="ghost wide" data-act="app-update">Aggiorna l'app</button></section>
+    <section class="card">
       <h3>I tuoi dati</h3>
       <p class="hint">Puoi scaricare una copia di tutti i tuoi dati in formato JSON.</p>
       <button class="ghost wide" data-act="export">Scarica i miei dati</button></section>
@@ -966,6 +970,15 @@ document.addEventListener("click", (ev) => {
 
     /* navigazione */
     case "back": goBack(); break;
+    case "app-update":
+      if (state.active && !confirm("Hai un allenamento in corso. L'app si ricarica ma l'allenamento resta salvato. Continuare?")) return;
+      guard(async () => {
+        const regs = (await navigator.serviceWorker?.getRegistrations?.()) || [];
+        await Promise.all(regs.map((r) => r.unregister()));
+        await Promise.all((await caches.keys()).map((k) => caches.delete(k)));
+        location.reload();
+      }, "Non sono riuscito ad aggiornare. Chiudi e riapri l'app.");
+      break;
     case "logout": guard(async () => { await sb.auth.signOut(); }); break;
 
     /* home e schede */
