@@ -238,3 +238,6 @@ alter table public.routines add column if not exists icon text;
 
 -- Giorni di allenamento della settimana (1 = lunedì ... 7 = domenica)
 alter table public.programs add column if not exists train_days int[] not null default '{1,2,4,5}';
+
+-- Scheda attiva: se una scheda è fissata, la home usa quella
+alter table public.programs add column if not exists pinned boolean not null default false;

@@ -356,12 +356,21 @@ async function finishWorkout() {
     })
   );
   if (!rows.length) return toast("Segna almeno una serie come completata");
+  // se è stato fatto meno di metà, chiedo se conta come giorno fatto (la settimana avanza solo in quel caso)
+  let counts = true;
+  if (a.routineId && a.week) {
+    const total = a.exercises.reduce((n, e) => n + e.sets.length, 0);
+    if (total && rows.length / total < 0.5) {
+      if (!confirm(`Hai completato solo ${rows.length} serie su ${total}.\n\nVuoi terminare e salvare comunque?\n(Annulla per tornare all'allenamento)`)) return;
+      counts = confirm(`Conta come giorno fatto?\n\nOK: sì, la settimana di ${a.name} avanza.\nAnnulla: lo salvo solo nello storico e il giorno resta da fare.`);
+    }
+  }
   const { data: w, error } = await sb
     .from("workouts")
     .insert({
       user_id: state.user.id,
-      routine_id: a.routineId,
-      week: a.week ?? null,
+      routine_id: counts ? a.routineId : null,
+      week: counts ? (a.week ?? null) : null,
       name: a.name,
       started_at: new Date(a.startedAt).toISOString(),
       finished_at: new Date().toISOString(),
@@ -376,8 +385,8 @@ async function finishWorkout() {
   }
 
   // scheda a settimane: salvo i carichi della settimana e passo alla successiva
-  let msg = "Allenamento salvato";
-  if (a.routineId && a.week) {
+  let msg = counts ? "Allenamento salvato" : "Salvato nello storico: il giorno resta da fare";
+  if (a.routineId && a.week && counts) {
     try {
       const wrows = [];
       a.exercises.forEach((e) => {
@@ -549,16 +558,12 @@ const gchips = (r) => {
   return g.length ? `<span class="gchips">${g.slice(0, 4).map((x) => `<span class="gchip g g-${gSlug(x)}"><i></i>${esc(x)}</span>`).join("")}${g.length > 4 ? `<span class="gchip more">+${g.length - 4}</span>` : ""}</span>` : "";
 };
 
-// giorno della settimana di oggi (1 = lunedì ... 7 = domenica) e giorni già fatti da lunedì
+// giorno della settimana di oggi (1 = lunedì ... 7 = domenica) e allenamenti fatti da lunedì
 const todayIso = () => new Date().getDay() || 7;
-function doneThisWeek(days) {
+function sessionsThisWeek(days) {
   const d = new Date();
   const monday = new Date(d.getFullYear(), d.getMonth(), d.getDate() - (todayIso() - 1)).getTime();
-  const ids = new Set();
-  (state.lastRuns || []).forEach((w) => {
-    if (new Date(w.started_at).getTime() >= monday && days.some((x) => x.id === w.routine_id)) ids.add(w.routine_id);
-  });
-  return ids;
+  return (state.lastRuns || []).filter((w) => new Date(w.started_at).getTime() >= monday && days.some((x) => x.id === w.routine_id)).length;
 }
 
 // Giorno "di oggi": quello rimasto più indietro (settimana più bassa); a parità, il primo della scheda.
@@ -570,6 +575,8 @@ function nextDay(p) {
   return days.find((d) => d.current_week === low);
 }
 function heroProgram() {
+  const pin = state.programs.find((p) => p.pinned && state.routines.some((r) => r.program_id === p.id));
+  if (pin) return pin;
   const last = (state.lastRuns || []).find((w) => state.routines.some((r) => r.id === w.routine_id));
   const r = last && state.routines.find((x) => x.id === last.routine_id);
   return state.programs.find((p) => p.id === r?.program_id) || state.programs.find((p) => state.routines.some((r2) => r2.program_id === p.id)) || null;
@@ -584,10 +591,15 @@ function homeHTML() {
   const hp = heroProgram(), hd = hp && nextDay(hp);
   if (hp && hd) {
     const days = state.routines.filter((r) => r.program_id === hp.id);
-    const doneIds = doneThisWeek(days);
-    const allDone = days.every((d) => doneIds.has(d.id));
-    const trainToday = (hp.train_days || DEFAULT_TRAIN).includes(todayIso());
-    const week = `Questa settimana: ${doneIds.size} su ${days.length} ${days.length === 1 ? "giorno fatto" : "giorni fatti"}`;
+    const train = hp.train_days || DEFAULT_TRAIN;
+    const planned = train.length;
+    const done = sessionsThisWeek(days);
+    // con 0 giorni scelti non c'è un calendario: si propone sempre il prossimo giorno
+    const allDone = planned > 0 && done >= planned;
+    const trainToday = planned === 0 || train.includes(todayIso());
+    const week = planned
+      ? `Questa settimana: ${done} su ${planned} allenamenti`
+      : `Questa settimana: ${done} ${done === 1 ? "allenamento" : "allenamenti"}`;
     if (trainToday && !allDone)
       h += `<section class="hero ${pc(hp.color)}">
       <span class="hero-ic">${icon(hd.icon || hp.icon)}</span>
@@ -605,7 +617,7 @@ function homeHTML() {
       <span class="hero-ic">${icon("moon")}</span>
       <small class="hero-k">${allDone ? "Settimana completata" : "Oggi riposo"}</small>
       <h2>Goditi il relax</h2>
-      <p>${allDone ? "Hai fatto tutti i giorni della settimana: ottimo lavoro." : "Il corpo cresce quando riposi. Se hai voglia, puoi allenarti lo stesso."}</p>
+      <p>${allDone ? "Hai fatto tutti gli allenamenti previsti: ottimo lavoro." : "Il corpo cresce quando riposi. Se hai voglia, puoi allenarti lo stesso."}</p>
       <p class="hero-wk">${week}</p>
       <div class="hero-row">
         <button class="hero-btn" data-act="start" data-id="${hd.id}" ${a ? "disabled" : ""}>Allenati: ${esc(hd.name)}</button>
@@ -620,7 +632,7 @@ function homeHTML() {
       const days = state.routines.filter((r) => r.program_id === p.id);
       return `<button class="pcard ${pc(p.color)}" data-act="open-program" data-id="${p.id}">
         <span class="ptile">${icon(p.icon)}</span>
-        <span class="ptxt"><b>${esc(p.name)}</b><small>${days.length} ${days.length === 1 ? "giorno" : "giorni"}${days.length ? `: ${esc(days.map((d) => d.name).join(", "))}` : ""}</small></span>
+        <span class="ptxt"><b>${esc(p.name)}${p.pinned ? ` <em class="badge">Attiva</em>` : ""}</b><small>${days.length} ${days.length === 1 ? "giorno" : "giorni"}${days.length ? `: ${esc(days.map((d) => d.name).join(", "))}` : ""}</small></span>
         <span class="chev" aria-hidden="true">›</span></button>`;
     })
     .join("");
@@ -635,7 +647,7 @@ function programHTML() {
   if (!p) return `<p class="empty">Scheda non trovata.</p>`;
   const days = state.routines.filter((r) => r.program_id === p.id);
   const nx = nextDay(p);
-  return `<section class="phead ${pc(p.color)}"><span class="ptile big">${icon(p.icon)}</span><div><b>${esc(p.name)}</b><small>${days.length} ${days.length === 1 ? "giorno" : "giorni"}</small></div></section>
+  return `<section class="phead ${pc(p.color)}"><span class="ptile big">${icon(p.icon)}</span><div><b>${esc(p.name)}</b><small>${days.length} ${days.length === 1 ? "giorno" : "giorni"}${p.pinned ? " · scheda attiva" : ""}</small></div></section>
     ${
       days.length
         ? days
@@ -654,6 +666,7 @@ function programHTML() {
         <span class="ptxt"><b>Allenamento extra</b><small>Scegli tu gli esercizi. Non cambia le settimane.</small></span>
         <span class="chev" aria-hidden="true">›</span></button>` : ""}
     <button class="ghost wide" data-act="add-day">Aggiungi giorno</button>
+    ${state.programs.length > 1 ? `<button class="ghost wide" data-act="prog-pin">${p.pinned ? "Non è più la scheda attiva" : "Usa questa come scheda attiva"}</button>` : ""}
     <div class="row"><button class="ghost" data-act="prog-edit">Modifica scheda</button><button class="danger-btn" data-act="prog-delete">Elimina scheda</button></div>`;
 }
 
@@ -1042,6 +1055,20 @@ document.addEventListener("click", (ev) => {
     }
     case "open-program": state.view = { name: "program", id: d.id }; render(); break;
     case "open-day": state.view = { name: "day", id: d.id }; render(); break;
+    case "prog-pin": {
+      const p = state.programs.find((x) => x.id === v.id);
+      const make = !p.pinned;
+      guard(async () => {
+        const r1 = await sb.from("programs").update({ pinned: false }).neq("id", p.id);
+        if (r1.error) throw r1.error;
+        const r2 = await sb.from("programs").update({ pinned: make }).eq("id", p.id);
+        if (r2.error) throw r2.error;
+        await loadAll();
+        render();
+        toast(make ? "Ora questa è la tua scheda attiva" : "Scheda attiva rimossa: la home usa l'ultima che hai fatto");
+      });
+      break;
+    }
     case "prog-edit": {
       const p = state.programs.find((x) => x.id === v.id);
       state.view = { name: "program-edit", id: p.id, title: p.name, icon: p.icon || "dumbbell", color: p.color || "teal", train: [...(p.train_days || DEFAULT_TRAIN)] };
@@ -1226,15 +1253,26 @@ document.addEventListener("click", (ev) => {
       state.openWorkouts.has(d.id) ? state.openWorkouts.delete(d.id) : state.openWorkouts.add(d.id);
       render();
       break;
-    case "h-delete":
-      if (!confirm("Eliminare questo allenamento?")) return;
+    case "h-delete": {
+      const w = state.workouts.find((x) => x.id === d.id);
+      const r = w && state.routines.find((x) => x.id === w.routine_id);
+      // la settimana torna indietro solo se era avanzata proprio per questo allenamento
+      const back = !!(r && w.week && r.current_week === w.week + 1 && !state.workouts.some((x) => x.id !== w.id && x.routine_id === w.routine_id && x.week === w.week));
+      if (!confirm(back ? `Eliminare questo allenamento?\n${r.name} torna alla settimana ${w.week}.` : "Eliminare questo allenamento?")) return;
       guard(async () => {
         const { error } = await sb.from("workouts").delete().eq("id", d.id);
         if (error) throw error;
+        if (back) {
+          const u = await sb.from("routines").update({ current_week: w.week }).eq("id", r.id);
+          if (u.error) throw u.error;
+        }
+        await loadAll();
         await loadHistory();
+        await loadLast().catch(() => {});
         render();
       });
       break;
+    }
 
     /* profilo */
     case "export":

@@ -1,6 +1,6 @@
 // Service worker: salva in cache i file dell'app così si apre subito anche senza rete.
 // I dati (schede, allenamenti) vengono sempre letti da Supabase e non passano da qui.
-const CACHE = "palestra-v14";
+const CACHE = "palestra-v15";
 const SHELL = [
   "./", "index.html", "style.css", "app.js", "importer.js", "config.js",
   "manifest.webmanifest", "fonts/display-bold.woff", "icons/icon.svg", "icons/icon-192.png", "icons/icon-512.png"
