@@ -235,3 +235,6 @@ alter table public.routine_exercises add column if not exists superset_id uuid;
 alter table public.programs add column if not exists icon text not null default 'dumbbell';
 alter table public.programs add column if not exists color text not null default 'teal';
 alter table public.routines add column if not exists icon text;
+
+-- Giorni di allenamento della settimana (1 = lunedì ... 7 = domenica)
+alter table public.programs add column if not exists train_days int[] not null default '{1,2,4,5}';

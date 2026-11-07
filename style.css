@@ -437,3 +437,12 @@ table.grid .cur { background: var(--accent-soft); }
 .pick-col { display: flex; flex-wrap: wrap; gap: 12px; }
 .sw { width: 40px; height: 40px; border-radius: 50%; border: 0; background: var(--pc); padding: 0; }
 .sw.on { box-shadow: 0 0 0 3px var(--bg), 0 0 0 5px var(--pc); }
+
+/* ---------- Giorni di allenamento e riposo ---------- */
+.pick-wd { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; }
+.wd { min-width: 0; min-height: 0; aspect-ratio: 1; border-radius: 14px; border: 2px solid transparent; background: var(--surface); color: var(--muted); font-family: var(--display); font-size: 22px; font-weight: 700; padding: 0; }
+.wd.on { background: var(--accent); color: var(--accent-ink); }
+.hero-wk { font-size: 13px; opacity: .85; margin-top: 2px; }
+.hero.rest { --pc: #4B6A8C; }
+.hero.rest .hero-btn { color: #3A5778; font-size: 21px; }
+.pick-col { margin-bottom: 14px; }

@@ -511,8 +511,9 @@ const PI = {
   shield: '<path d="M12 3 5 6v6c0 4.5 3 7.5 7 9 4-1.5 7-4.5 7-9V6z"/>',
 };
 const COLORS = ["teal", "blue", "violet", "red", "amber", "green", "pink"];
+const PI_EXTRA = { moon: '<path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/>' };
 const icon = (k) =>
-  `<svg class="pi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${PI[k] || PI.dumbbell}</svg>`;
+  `<svg class="pi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${PI[k] || PI_EXTRA[k] || PI.dumbbell}</svg>`;
 const nEx = (n) => `${n} ${n === 1 ? "esercizio" : "esercizi"}`;
 const pc = (c) => `pc-${COLORS.includes(c) ? c : "teal"}`;
 
@@ -524,12 +525,19 @@ function iconPickHTML(sel, withNone) {
 const colorPickHTML = (sel) =>
   `<div class="pick-col" role="group" aria-label="Colore">${COLORS.map((c) => `<button type="button" class="sw ${pc(c)} ${sel === c ? "on" : ""}" data-act="col-pick" data-v="${c}" aria-label="${c}"></button>`).join("")}</div>`;
 
+const WD = [["L", "Lunedì"], ["M", "Martedì"], ["M", "Mercoledì"], ["G", "Giovedì"], ["V", "Venerdì"], ["S", "Sabato"], ["D", "Domenica"]];
+const trainPickHTML = (sel = []) =>
+  `<div class="pick-wd" role="group" aria-label="Giorni di allenamento">${WD.map(([l, n], i) => `<button type="button" class="wd ${sel.includes(i + 1) ? "on" : ""}" data-act="tr-toggle" data-v="${i + 1}" aria-pressed="${sel.includes(i + 1)}" aria-label="${n}">${l}</button>`).join("")}</div>`;
+const DEFAULT_TRAIN = [1, 2, 4, 5];
+
 function programFormHTML(edit) {
   const v = state.view;
   return `<section class="phead ${pc(v.color)}"><span class="ptile big">${icon(v.icon)}</span><div><b>${esc(v.title.trim() || "Nome della scheda")}</b><small>Anteprima</small></div></section>
     <label class="field">Nome della scheda<input data-bind="prog-name" value="${esc(v.title || "")}" placeholder="Es. Settembre, Massa, Forza" maxlength="60"></label>
     <div class="field"><span class="lbl">Icona</span>${iconPickHTML(v.icon, false)}</div>
     <div class="field"><span class="lbl">Colore</span>${colorPickHTML(v.color)}</div>
+    <div class="field"><span class="lbl">Giorni in cui ti alleni di solito</span>${trainPickHTML(v.train)}
+      <p class="hint">Negli altri giorni l'app ti dice che è riposo, ma puoi allenarti lo stesso quando vuoi.</p></div>
     <button class="primary wide" data-act="${edit ? "prog-update" : "prog-create"}">${edit ? "Salva" : "Crea scheda"}</button>
     ${edit ? "" : `<p class="hint">Dopo aver creato la scheda potrai aggiungere i giorni (Giorno 1, Giorno 2, ...) con i loro esercizi.</p>`}`;
 }
@@ -540,6 +548,18 @@ const gchips = (r) => {
   const g = dayGroups(r);
   return g.length ? `<span class="gchips">${g.slice(0, 4).map((x) => `<span class="gchip g g-${gSlug(x)}"><i></i>${esc(x)}</span>`).join("")}${g.length > 4 ? `<span class="gchip more">+${g.length - 4}</span>` : ""}</span>` : "";
 };
+
+// giorno della settimana di oggi (1 = lunedì ... 7 = domenica) e giorni già fatti da lunedì
+const todayIso = () => new Date().getDay() || 7;
+function doneThisWeek(days) {
+  const d = new Date();
+  const monday = new Date(d.getFullYear(), d.getMonth(), d.getDate() - (todayIso() - 1)).getTime();
+  const ids = new Set();
+  (state.lastRuns || []).forEach((w) => {
+    if (new Date(w.started_at).getTime() >= monday && days.some((x) => x.id === w.routine_id)) ids.add(w.routine_id);
+  });
+  return ids;
+}
 
 // Giorno "di oggi": quello rimasto più indietro (settimana più bassa); a parità, il primo della scheda.
 // Così funziona anche se i giorni si fanno in ordine sparso.
@@ -562,17 +582,36 @@ function homeHTML() {
     h += `<section class="live"><div><strong>${esc(a.name)}${a.week ? `, settimana ${a.week}` : ""}</strong><span>iniziato alle ${fmtTime(a.startedAt)}</span></div>
       <button class="primary" data-act="resume">Riprendi</button></section>`;
   const hp = heroProgram(), hd = hp && nextDay(hp);
-  if (hp && hd)
-    h += `<section class="hero ${pc(hp.color)}">
+  if (hp && hd) {
+    const days = state.routines.filter((r) => r.program_id === hp.id);
+    const doneIds = doneThisWeek(days);
+    const allDone = days.every((d) => doneIds.has(d.id));
+    const trainToday = (hp.train_days || DEFAULT_TRAIN).includes(todayIso());
+    const week = `Questa settimana: ${doneIds.size} su ${days.length} ${days.length === 1 ? "giorno fatto" : "giorni fatti"}`;
+    if (trainToday && !allDone)
+      h += `<section class="hero ${pc(hp.color)}">
       <span class="hero-ic">${icon(hd.icon || hp.icon)}</span>
       <small class="hero-k">Oggi tocca</small>
       <h2>${esc(hd.name)}</h2>
       <p>${esc(hp.name)} · settimana ${hd.current_week} · ${nEx(hd.items.length)}</p>
       ${gchips(hd)}
+      <p class="hero-wk">${week}</p>
       <div class="hero-row">
         <button class="hero-btn" data-act="start" data-id="${hd.id}" ${a ? "disabled" : ""}>Inizia</button>
-        <button class="hero-lnk" data-act="open-program" data-id="${hp.id}">Apri scheda</button>
+        <button class="hero-lnk" data-act="open-program" data-id="${hp.id}">Cambia giorno</button>
       </div></section>`;
+    else
+      h += `<section class="hero rest">
+      <span class="hero-ic">${icon("moon")}</span>
+      <small class="hero-k">${allDone ? "Settimana completata" : "Oggi riposo"}</small>
+      <h2>Goditi il relax</h2>
+      <p>${allDone ? "Hai fatto tutti i giorni della settimana: ottimo lavoro." : "Il corpo cresce quando riposi. Se hai voglia, puoi allenarti lo stesso."}</p>
+      <p class="hero-wk">${week}</p>
+      <div class="hero-row">
+        <button class="hero-btn" data-act="start" data-id="${hd.id}" ${a ? "disabled" : ""}>Allenati lo stesso</button>
+        <button class="hero-lnk" data-act="open-program" data-id="${hp.id}">Scegli il giorno</button>
+      </div></section>`;
+  }
   h += `<div class="sec-h"><h2>Le tue schede</h2><button class="link" data-act="new-program">Nuova scheda</button></div>`;
   if (!state.programs.length)
     h += `<p class="empty">Non hai ancora nessuna scheda. Creane una, oppure importala da un file Excel.</p>`;
@@ -984,12 +1023,12 @@ document.addEventListener("click", (ev) => {
     /* home e schede */
     case "resume": state.view = { name: "workout" }; render(); break;
     case "start": guard(() => startWorkout(d.id || null)); break;
-    case "new-program": state.view = { name: "program-new", title: "", icon: "dumbbell", color: COLORS[state.programs.length % COLORS.length] }; render(); break;
+    case "new-program": state.view = { name: "program-new", title: "", icon: "dumbbell", color: COLORS[state.programs.length % COLORS.length], train: [...DEFAULT_TRAIN] }; render(); break;
     case "prog-create": {
       const name = (v.title || "").trim();
       if (!name) return toast("Dai un nome alla scheda");
       guard(async () => {
-        const { data, error } = await sb.from("programs").insert({ name, user_id: state.user.id, icon: v.icon, color: v.color }).select().single();
+        const { data, error } = await sb.from("programs").insert({ name, user_id: state.user.id, icon: v.icon, color: v.color, train_days: v.train }).select().single();
         if (error) throw error;
         await loadAll();
         state.view = { name: "program", id: data.id };
@@ -1001,7 +1040,7 @@ document.addEventListener("click", (ev) => {
     case "open-day": state.view = { name: "day", id: d.id }; render(); break;
     case "prog-edit": {
       const p = state.programs.find((x) => x.id === v.id);
-      state.view = { name: "program-edit", id: p.id, title: p.name, icon: p.icon || "dumbbell", color: p.color || "teal" };
+      state.view = { name: "program-edit", id: p.id, title: p.name, icon: p.icon || "dumbbell", color: p.color || "teal", train: [...(p.train_days || DEFAULT_TRAIN)] };
       render();
       break;
     }
@@ -1009,7 +1048,7 @@ document.addEventListener("click", (ev) => {
       const nm = (v.title || "").trim();
       if (!nm) return toast("Dai un nome alla scheda");
       guard(async () => {
-        const { error } = await sb.from("programs").update({ name: nm, icon: v.icon, color: v.color }).eq("id", v.id);
+        const { error } = await sb.from("programs").update({ name: nm, icon: v.icon, color: v.color, train_days: v.train }).eq("id", v.id);
         if (error) throw error;
         await loadAll();
         state.view = { name: "program", id: v.id };
@@ -1019,6 +1058,12 @@ document.addEventListener("click", (ev) => {
     }
     case "ic-pick": if (v.name === "routine") v.routine.icon = d.v || null; else v.icon = d.v; render(); break;
     case "col-pick": v.color = d.v; render(); break;
+    case "tr-toggle": {
+      const n = Number(d.v);
+      v.train = v.train.includes(n) ? v.train.filter((x) => x !== n) : [...v.train, n].sort();
+      render();
+      break;
+    }
     case "prog-delete": {
       const p = state.programs.find((x) => x.id === v.id);
       if (!confirm(`Eliminare la scheda «${p.name}» con tutti i suoi giorni e i carichi? Lo storico degli allenamenti resta.`)) return;
