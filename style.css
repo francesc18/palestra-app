@@ -464,3 +464,29 @@ table.grid .cur { background: var(--accent-soft); }
 .wm-i .k { fill: #FFB238; }
 .auth .slogan { margin-top: -6px; font-weight: 700; color: var(--accent); letter-spacing: .02em; }
 @media (prefers-color-scheme: dark) { .wm-i .w { fill: var(--bg); } }
+
+/* ---------- Grafici ---------- */
+.chart { margin: 4px 0 6px; }
+.chart svg { width: 100%; height: auto; display: block; overflow: visible; }
+.chart figcaption { font-size: 12px; color: var(--muted); text-align: center; margin-top: 2px; }
+.chart .gl { stroke: var(--line); stroke-width: 1; }
+.chart .ty, .chart .tx { fill: var(--muted); font-size: 10px; font-family: inherit; }
+.chart .ty { text-anchor: end; }
+.chart .tx { text-anchor: middle; }
+.chart .ln { fill: none; stroke: var(--accent); stroke-width: 2.5; stroke-linejoin: round; stroke-linecap: round; }
+.chart .ar { fill: var(--accent); opacity: .12; }
+.chart .pt { fill: var(--surface); stroke: var(--accent); stroke-width: 2; }
+.chart .pt.mx { fill: var(--accent); }
+.chart .tv { fill: var(--accent); font-size: 11px; font-weight: 700; text-anchor: middle; font-family: inherit; }
+.chart .bar { fill: var(--accent); opacity: .35; }
+.chart .bar.cur { opacity: 1; }
+
+/* ---------- Storico per settimana ---------- */
+.hweek { padding: 0; overflow: hidden; }
+.hweek-h { width: 100%; display: flex; align-items: center; gap: 10px; text-align: left; background: transparent; border: 0; padding: 14px 16px; color: inherit; }
+.hweek-h > span:first-child { flex: 1; display: grid; gap: 4px; min-width: 0; }
+.hweek-h b { font-size: 17px; }
+.hweek-h small { color: var(--muted); font-size: 14px; }
+.chev.open { transform: rotate(90deg); }
+.chev { transition: transform .15s; }
+.hday { border-top: 1px solid var(--line); padding: 12px 16px; display: grid; gap: 8px; }

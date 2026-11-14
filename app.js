@@ -36,6 +36,8 @@ const state = {
   workouts: [],
   sets: [],
   openWorkouts: new Set(),
+  openWeeks: null, // settimane aperte nello storico (all'inizio: quella in corso)
+  histLoaded: false,
   active: null,
   q: "",
   group: "",
@@ -206,6 +208,7 @@ async function loadHistory() {
   if (w.error || s.error) throw w.error || s.error;
   state.workouts = w.data;
   state.sets = s.data;
+  state.histLoaded = true;
 }
 
 async function saveRoutine(r) {
@@ -945,6 +948,24 @@ function imgPairHTML(url, name) {
     .join("")}</div>`;
 }
 
+// Grafico dell'esercizio: dalla scheda (settimane) se c'è, altrimenti dallo storico (date)
+function exChartHTML(e) {
+  const items = state.routines.flatMap((r) => r.items.filter((it) => it.exercise_id === e.id).map((it) => ({ it, r })));
+  const best = items.map((x) => ({ ...x, wp: weekPoints(x.it) })).sort((a, b) => b.wp.pts.length - a.wp.pts.length)[0];
+  if (best && best.wp.pts.length >= 2)
+    return `<section class="card"><h3>Progressi</h3>${lineChartHTML(best.wp.pts, best.wp.unit, `${best.wp.caption} · ${best.r.name}`)}</section>`;
+  const byW = {};
+  (state.sets || []).filter((x) => x.exercise_id === e.id && x.weight > 0).forEach((x) => (byW[x.workout_id] = Math.max(byW[x.workout_id] || 0, Number(x.weight))));
+  const pts = state.workouts
+    .filter((w) => byW[w.id])
+    .map((w) => ({ t: new Date(w.started_at), v: byW[w.id] }))
+    .sort((a, b) => a.t - b.t)
+    .slice(-12)
+    .map((p) => ({ label: `${p.t.getDate()}/${p.t.getMonth() + 1}`, v: p.v }));
+  if (pts.length >= 2) return `<section class="card"><h3>Progressi</h3>${lineChartHTML(pts, "kg", "Carico più alto per allenamento")}</section>`;
+  return "";
+}
+
 function exerciseHTML() {
   const v = state.view;
   if (!v.id)
@@ -963,7 +984,93 @@ function exerciseHTML() {
       <div class="row"><span class="tag">${esc(e.muscle_group)}</span>${e.equipment ? `<span class="tag">${esc(e.equipment)}</span>` : ""}</div>
       <p>${esc(e.instructions || "Nessuna descrizione.")}</p>
     </article>
+    ${exChartHTML(e)}
     ${e.owner === state.user.id ? `<button class="danger-btn wide" data-act="ex-delete" data-id="${e.id}">Elimina esercizio</button>` : ""}`;
+}
+
+/* ------------------------------------------------------------------ */
+/* Settimane e grafici                                                 */
+/* ------------------------------------------------------------------ */
+const MESI = ["gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno", "luglio", "agosto", "settembre", "ottobre", "novembre", "dicembre"];
+// lunedì della settimana (ora locale) e chiave "AAAA-MM-GG"
+function mondayOf(d) {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  x.setDate(x.getDate() - ((x.getDay() || 7) - 1));
+  return x;
+}
+const dkey = (x) => `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`;
+function weekTitle(mon) {
+  const cur = mondayOf(new Date()).getTime();
+  const diff = Math.round((cur - mon.getTime()) / (7 * 86400000));
+  if (diff === 0) return "Questa settimana";
+  if (diff === 1) return "Settimana scorsa";
+  const sun = new Date(mon);
+  sun.setDate(sun.getDate() + 6);
+  return mon.getMonth() === sun.getMonth()
+    ? `${mon.getDate()}–${sun.getDate()} ${MESI[sun.getMonth()]}`
+    : `${mon.getDate()} ${MESI[mon.getMonth()].slice(0, 3)} – ${sun.getDate()} ${MESI[sun.getMonth()].slice(0, 3)}`;
+}
+const fmtN = (n) => (Math.abs(n) >= 10 ? String(Math.round(n)) : String(Math.round(n * 10) / 10).replace(".", ","));
+
+// Grafico a linea: punti [{ label, v }], evidenzia il valore più alto (record)
+function lineChartHTML(pts, unit, caption) {
+  if (pts.length < 2) return "";
+  const W = 320, H = 150, L = 34, R = 14, T = 22, B = 24;
+  const vs = pts.map((p) => p.v);
+  let lo = Math.min(...vs), hi = Math.max(...vs);
+  if (hi === lo) { hi += 1; lo -= 1; }
+  const pad = (hi - lo) * 0.12;
+  lo = Math.max(0, lo - pad);
+  hi += pad;
+  const x = (i) => L + ((W - L - R) * i) / (pts.length - 1);
+  const y = (v) => T + (H - T - B) * (1 - (v - lo) / (hi - lo));
+  const max = Math.max(...vs), iMax = vs.lastIndexOf(max);
+  const line = pts.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)} ${y(p.v).toFixed(1)}`).join(" ");
+  const area = `${line} L${x(pts.length - 1).toFixed(1)} ${H - B} L${x(0).toFixed(1)} ${H - B} Z`;
+  const step = Math.ceil(pts.length / 7);
+  const tx = Math.min(Math.max(x(iMax), L + 18), W - R - 18);
+  return `<figure class="chart"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(caption)}: massimo ${kg(max)} ${unit}">
+      ${[lo, (lo + hi) / 2, hi].map((t) => `<line x1="${L}" x2="${W - R}" y1="${y(t).toFixed(1)}" y2="${y(t).toFixed(1)}" class="gl"/><text x="${L - 6}" y="${(y(t) + 3.5).toFixed(1)}" class="ty">${fmtN(t)}</text>`).join("")}
+      <path d="${area}" class="ar"/><path d="${line}" class="ln"/>
+      ${pts.map((p, i) => `<circle cx="${x(i).toFixed(1)}" cy="${y(p.v).toFixed(1)}" r="${i === iMax ? 4.5 : 3}" class="pt${i === iMax ? " mx" : ""}"/>`).join("")}
+      ${pts.map((p, i) => (i % step === 0 || i === pts.length - 1 ? `<text x="${x(i).toFixed(1)}" y="${H - 7}" class="tx">${esc(p.label)}</text>` : "")).join("")}
+      <text x="${tx.toFixed(1)}" y="${(y(max) - 9).toFixed(1)}" class="tv">${kg(max)} ${unit}</text>
+    </svg><figcaption>${esc(caption)}</figcaption></figure>`;
+}
+
+// Punti per settimana di un esercizio della scheda: carico più alto (o ripetizioni, se a corpo libero)
+function weekPoints(it) {
+  const weeks = Object.keys(it.weeks || {}).map(Number).sort((a, b) => a - b);
+  const sets = (w) => (it.weeks[w] || []).filter(Boolean);
+  const heavy = weeks.some((w) => sets(w).some((s) => Number(s.weight) > 0));
+  const pts = weeks
+    .map((w) => ({ label: `S${w}`, v: Math.max(0, ...sets(w).map((s) => Number(heavy ? s.weight : s.reps) || 0)) }))
+    .filter((p) => p.v > 0);
+  return { pts, unit: heavy ? "kg" : "rip.", caption: heavy ? "Carico più alto per settimana" : "Ripetizioni migliori per settimana" };
+}
+
+// Grafico a barre: allenamenti fatti nelle ultime settimane
+function weeksBarHTML() {
+  const mon = mondayOf(new Date());
+  const weeks = Array.from({ length: 8 }, (_, k) => {
+    const m = new Date(mon);
+    m.setDate(m.getDate() - 7 * (7 - k));
+    return m;
+  });
+  const count = weeks.map((m) => state.workouts.filter((w) => dkey(mondayOf(w.started_at)) === dkey(m)).length);
+  const top = Math.max(4, ...count);
+  const W = 320, H = 110, B = 22, T = 16, bw = 26, gap = (W - 8 * bw) / 8;
+  return `<figure class="chart bars"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Allenamenti nelle ultime 8 settimane">
+      ${count
+        .map((c, k) => {
+          const h = ((H - B - T) * c) / top, xx = gap / 2 + k * (bw + gap), yy = H - B - h;
+          return `<rect x="${xx.toFixed(1)}" y="${yy.toFixed(1)}" width="${bw}" height="${Math.max(h, 2).toFixed(1)}" rx="6" class="${k === 7 ? "bar cur" : "bar"}"/>
+          ${c ? `<text x="${(xx + bw / 2).toFixed(1)}" y="${(yy - 5).toFixed(1)}" class="tv">${c}</text>` : ""}
+          <text x="${(xx + bw / 2).toFixed(1)}" y="${H - 7}" class="tx">${weeks[k].getDate()}/${weeks[k].getMonth() + 1}</text>`;
+        })
+        .join("")}
+    </svg><figcaption>Allenamenti per settimana (ultime 8)</figcaption></figure>`;
 }
 
 function historyHTML() {
@@ -982,26 +1089,52 @@ function historyHTML() {
   if (prs.length)
     h += `<section class="card"><h3>Record personali</h3><p class="hint">Miglior serie per esercizio, con massimale stimato.</p>
       <div>${prs.map(([n, b]) => `<div class="pr"><b>${esc(n)}</b><span>${kg(b.w)} kg × ${b.r} (≈ ${kg(Math.round(b.v * 10) / 10)} kg)</span></div>`).join("")}</div></section>`;
+  h = `<section class="card">${weeksBarHTML()}</section>` + h;
   h += `<div class="sec-h"><h2>Allenamenti</h2></div>`;
-  h += state.workouts
-    .map((w) => {
-      const ws = state.sets.filter((s) => s.workout_id === w.id);
-      const vol = ws.reduce((t, s) => t + s.weight * s.reps, 0);
-      const mins = w.finished_at ? Math.round((new Date(w.finished_at) - new Date(w.started_at)) / 60000) : null;
-      const open = state.openWorkouts.has(w.id);
-      let detail = "";
-      if (open) {
-        const by = {};
-        ws.forEach((s) => (by[s.exercise_name] ||= []).push(s));
-        detail =
-          Object.entries(by).map(([n, arr]) => `<div class="hist-ex"><b>${esc(n)}</b><span>${arr.map((s) => `${kg(s.weight)} kg × ${s.reps}`).join(", ")}</span></div>`).join("") +
-          `<button class="link danger" data-act="h-delete" data-id="${w.id}">Elimina allenamento</button>`;
-      }
-      return `<article class="card">
-        <div class="card-h"><div><h3>${esc(w.name)}</h3><p class="hint">${fmtDate(w.started_at)}${w.week ? `, settimana ${w.week}` : ""}</p></div>
-          <button class="link" data-act="h-toggle" data-id="${w.id}" aria-expanded="${open}">${open ? "Chiudi" : "Dettagli"}</button></div>
-        <div class="stats"><span>${ws.length} serie</span><span>Volume ${Math.round(vol)} kg</span>${mins !== null ? `<span>${mins} min</span>` : ""}</div>
-        ${detail}</article>`;
+  // raggruppati per settimana (da lunedì a domenica); al tocco si aprono i giorni
+  const groups = [];
+  state.workouts.forEach((w) => {
+    const m = mondayOf(w.started_at), k = dkey(m);
+    let g = groups.find((x) => x.k === k);
+    if (!g) groups.push((g = { k, m, list: [] }));
+    g.list.push(w);
+  });
+  if (!state.openWeeks) state.openWeeks = new Set([dkey(mondayOf(new Date()))]);
+  h += groups
+    .map((g) => {
+      const open = state.openWeeks.has(g.k);
+      const ws = state.sets.filter((x) => g.list.some((w) => w.id === x.workout_id));
+      const vol = ws.reduce((t, x) => t + x.weight * x.reps, 0);
+      const names = [...g.list].reverse().map((w) => w.name);
+      const days = open
+        ? g.list
+            .map((w) => {
+              const ss = state.sets.filter((x) => x.workout_id === w.id);
+              const v = ss.reduce((t, x) => t + x.weight * x.reps, 0);
+              const mins = w.finished_at ? Math.round((new Date(w.finished_at) - new Date(w.started_at)) / 60000) : null;
+              const wo = state.openWorkouts.has(w.id);
+              let detail = "";
+              if (wo) {
+                const by = {};
+                ss.forEach((x) => (by[x.exercise_name] ||= []).push(x));
+                detail =
+                  Object.entries(by).map(([n, arr]) => `<div class="hist-ex"><b>${esc(n)}</b><span>${arr.map((x) => `${kg(x.weight)} kg × ${x.reps}`).join(", ")}</span></div>`).join("") +
+                  `<button class="link danger" data-act="h-delete" data-id="${w.id}">Elimina allenamento</button>`;
+              }
+              return `<div class="hday">
+              <div class="card-h"><div><b>${esc(w.name)}</b><p class="hint">${fmtDate(w.started_at)}${w.week ? `, settimana ${w.week}` : ""}</p></div>
+                <button class="link" data-act="h-toggle" data-id="${w.id}" aria-expanded="${wo}">${wo ? "Chiudi" : "Dettagli"}</button></div>
+              <div class="stats"><span>${ss.length} serie</span><span>Volume ${Math.round(v)} kg</span>${mins !== null ? `<span>${mins} min</span>` : ""}</div>
+              ${detail}</div>`;
+            })
+            .join("")
+        : "";
+      return `<article class="card hweek">
+        <button class="hweek-h" data-act="hw-toggle" data-k="${g.k}" aria-expanded="${open}">
+          <span><b>${weekTitle(g.m)}</b><small>${g.list.length} ${g.list.length === 1 ? "allenamento" : "allenamenti"} · volume ${Math.round(vol)} kg</small>
+            <span class="gchips">${names.map((n) => `<span class="gchip">${esc(n)}</span>`).join("")}</span></span>
+          <span class="chev ${open ? "open" : ""}" aria-hidden="true">›</span></button>
+        ${days}</article>`;
     })
     .join("");
   return h;
@@ -1300,7 +1433,11 @@ document.addEventListener("click", (ev) => {
     }
 
     /* esercizi */
-    case "ex-open": state.view = { name: "exercise", id: d.id }; render(); break;
+    case "ex-open":
+      state.view = { name: "exercise", id: d.id };
+      render();
+      if (!state.histLoaded) loadHistory().then(render).catch(() => {}); // serve per il grafico dallo storico
+      break;
     case "ex-new": state.view = { name: "exercise", id: null }; render(); break;
     case "ex-delete":
       if (!confirm("Eliminare questo esercizio? Verrà tolto anche dalle tue schede.")) return;
@@ -1314,6 +1451,10 @@ document.addEventListener("click", (ev) => {
       break;
 
     /* storico */
+    case "hw-toggle":
+      state.openWeeks.has(d.k) ? state.openWeeks.delete(d.k) : state.openWeeks.add(d.k);
+      render();
+      break;
     case "h-toggle":
       state.openWorkouts.has(d.id) ? state.openWorkouts.delete(d.id) : state.openWorkouts.add(d.id);
       render();
@@ -1470,7 +1611,9 @@ function progressHTML() {
             .join("");
           return `<tr><th scope="row">${i + 1}</th>${cells}</tr>`;
         }).join("");
+        const wp = weekPoints(it);
         return `<section class="card ${gCls(it.exercise_id)}"><h3>${esc(exName(it.exercise_id))}</h3>${it.notes ? `<p class="hint">${esc(it.notes)}</p>` : ""}
+          ${lineChartHTML(wp.pts, wp.unit, wp.caption)}
           <div class="grid-wrap"><table class="grid"><thead><tr><th>Serie</th>${head}</tr></thead><tbody>${body}</tbody></table></div></section>`;
       })
       .join("")
