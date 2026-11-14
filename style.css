@@ -450,3 +450,8 @@ table.grid .cur { background: var(--accent-soft); }
 .pcard.extra { background: transparent; box-shadow: inset 0 0 0 1.5px var(--line); }
 .pcard.extra .ptile { background: var(--surface); color: var(--pc); box-shadow: inset 0 0 0 1.5px var(--line); }
 .pcard:disabled { opacity: .55; }
+
+/* ---------- Esporta in Excel ---------- */
+.xsel .tick { width: 30px; height: 30px; flex: none; border-radius: 50%; display: grid; place-items: center; box-shadow: inset 0 0 0 2px var(--line); color: #fff; font-weight: 800; }
+.xsel.on .tick { background: var(--pc); box-shadow: none; }
+.xsel:not(.on) .ptile { opacity: .45; }

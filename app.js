@@ -446,6 +446,7 @@ function render() {
   else if (v?.name === "day") { title = state.routines.find((x) => x.id === v.id)?.name ?? "Giorno"; body = dayHTML(); back = true; }
   else if (v?.name === "program-new") { title = "Nuova scheda"; body = programFormHTML(false); back = true; }
   else if (v?.name === "program-edit") { title = "Modifica scheda"; body = programFormHTML(true); back = true; }
+  else if (v?.name === "xlsx") { title = "Esporta in Excel"; body = exportHTML(); back = true; }
   else {
     const t = {
       home: ["Allenamento", homeHTML],
@@ -538,6 +539,63 @@ const WD = [["L", "Lunedì"], ["M", "Martedì"], ["M", "Mercoledì"], ["G", "Gio
 const trainPickHTML = (sel = []) =>
   `<div class="pick-wd" role="group" aria-label="Giorni di allenamento">${WD.map(([l, n], i) => `<button type="button" class="wd ${sel.includes(i + 1) ? "on" : ""}" data-act="tr-toggle" data-v="${i + 1}" aria-pressed="${sel.includes(i + 1)}" aria-label="${n}">${l}</button>`).join("")}</div>`;
 const DEFAULT_TRAIN = [1, 2, 4, 5];
+
+function exportHTML() {
+  const sel = state.view.sel;
+  return `<p class="hint">Scegli le schede da esportare. Ottieni un unico file Excel: ogni giorno è un foglio, con tutte le settimane, i pesi e le ripetizioni.</p>
+    ${state.programs
+      .map((p) => {
+        const on = sel.includes(p.id);
+        const n = state.routines.filter((r) => r.program_id === p.id).length;
+        return `<button class="pcard xsel ${pc(p.color)} ${on ? "on" : ""}" data-act="xlsx-toggle" data-id="${p.id}" aria-pressed="${on}">
+        <span class="ptile">${icon(p.icon)}</span>
+        <span class="ptxt"><b>${esc(p.name)}</b><small>${n} ${n === 1 ? "giorno" : "giorni"}</small></span>
+        <span class="tick" aria-hidden="true">${on ? "✓" : ""}</span></button>`;
+      })
+      .join("")}
+    <button class="primary wide" data-act="xlsx-run" ${sel.length ? "" : "disabled"}>Scarica il file Excel</button>`;
+}
+
+// Crea il file Excel (un foglio per giorno) e lo scarica sul telefono
+async function exportXlsx(ids) {
+  const progs = state.programs
+    .filter((p) => ids.includes(p.id))
+    .map((p) => ({
+      name: p.name,
+      days: state.routines
+        .filter((r) => r.program_id === p.id)
+        .map((r) => ({
+          name: r.name,
+          notes: r.notes,
+          current_week: r.current_week,
+          items: r.items.map((it) => ({
+            name: exName(it.exercise_id),
+            raw: it.notes || "",
+            superset_id: it.superset_id || null,
+            target_sets: it.target_sets,
+            target_reps: it.target_reps,
+            rep_targets: it.rep_targets,
+            rest_seconds: it.rest_seconds,
+            weeks: it.weeks || {},
+          })),
+        })),
+    }))
+    .filter((p) => p.days.length);
+  if (!progs.length) return toast("Queste schede non hanno ancora giorni da esportare");
+  const { buildXlsx } = await import("./exporter.js");
+  const blob = buildXlsx(progs);
+  const slug = (t) => t.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  const name = progs.length === 1 ? `scheda-${slug(progs[0].name) || "palestra"}.xlsx` : `schede-palestra-${new Date().toISOString().slice(0, 10)}.xlsx`;
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+  toast("File Excel scaricato: lo trovi nei Download");
+}
 
 function programFormHTML(edit) {
   const v = state.view;
@@ -638,6 +696,7 @@ function homeHTML() {
     .join("");
   h += `<button class="ghost wide" data-act="start" data-id="" ${a ? "disabled" : ""}>Allenamento libero</button>`;
   h += `<label class="ghost wide filelabel">Importa da Excel<input type="file" id="imp-file" accept=".xlsx,.xls,.xlsm,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" hidden></label>`;
+  if (state.programs.length) h += `<button class="ghost wide" data-act="xlsx-view">Esporta schede in Excel</button>`;
   if (a) h += `<p class="hint">Hai un allenamento in corso: riprendilo o terminalo prima di iniziarne un altro.</p>`;
   return h;
 }
@@ -667,6 +726,7 @@ function programHTML() {
         <span class="chev" aria-hidden="true">›</span></button>` : ""}
     <button class="ghost wide" data-act="add-day">Aggiungi giorno</button>
     ${state.programs.length > 1 ? `<button class="ghost wide" data-act="prog-pin">${p.pinned ? "Non è più la scheda attiva" : "Usa questa come scheda attiva"}</button>` : ""}
+    ${days.length ? `<button class="ghost wide" data-act="xlsx-one">Esporta in Excel</button>` : ""}
     <div class="row"><button class="ghost" data-act="prog-edit">Modifica scheda</button><button class="danger-btn" data-act="prog-delete">Elimina scheda</button></div>`;
 }
 
@@ -1055,6 +1115,10 @@ document.addEventListener("click", (ev) => {
     }
     case "open-program": state.view = { name: "program", id: d.id }; render(); break;
     case "open-day": state.view = { name: "day", id: d.id }; render(); break;
+    case "xlsx-view": state.view = { name: "xlsx", sel: state.programs.map((p) => p.id) }; render(); break;
+    case "xlsx-toggle": v.sel = v.sel.includes(d.id) ? v.sel.filter((x) => x !== d.id) : [...v.sel, d.id]; render(); break;
+    case "xlsx-run": guard(() => exportXlsx(v.sel), "Non sono riuscito a creare il file Excel."); break;
+    case "xlsx-one": guard(() => exportXlsx([v.id]), "Non sono riuscito a creare il file Excel."); break;
     case "prog-pin": {
       const p = state.programs.find((x) => x.id === v.id);
       const make = !p.pinned;
