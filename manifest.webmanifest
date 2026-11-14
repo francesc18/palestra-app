@@ -1,7 +1,7 @@
 {
-  "name": "Palestra",
-  "short_name": "Palestra",
-  "description": "Schede, allenamenti, pesi e recuperi.",
+  "name": "SpinGym",
+  "short_name": "SpinGym",
+  "description": "Schede, pesi e progressi. Spingiamo, insieme.",
   "lang": "it",
   "start_url": "./",
   "scope": "./",
@@ -10,8 +10,23 @@
   "background_color": "#E8EFEF",
   "theme_color": "#E8EFEF",
   "icons": [
-    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
-    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
   ]
 }

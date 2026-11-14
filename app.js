@@ -477,8 +477,9 @@ function renderAuth() {
   const m = state.authMsg;
   app.innerHTML = `
     <div class="auth">
-      <div class="logo" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="1.5" y="9" width="3" height="6" rx="1"/><rect x="5" y="6" width="3.2" height="12" rx="1.2"/><rect x="8.2" y="11" width="7.6" height="2" rx=".6"/><rect x="15.8" y="6" width="3.2" height="12" rx="1.2"/><rect x="19.5" y="9" width="3" height="6" rx="1"/></svg></div>
-      <h1>Palestra</h1>
+      <img class="logo" src="icons/icon.svg" alt="" width="84" height="84">
+      <h1 class="wm" aria-label="SpinGym">Sp<svg class="wm-i" viewBox="0 0 30 75" aria-hidden="true"><circle cx="15" cy="11" r="10" class="b"/><path d="M9.5 12C9.5 7 13 6 15 8.5 17 6 20.5 7 20.5 12c0 3-2.5 4.5-5.5 4.5S9.5 15 9.5 12Z" class="w"/><circle cx="12.6" cy="11.4" r="1.4" class="b"/><circle cx="17.4" cy="11.4" r="1.4" class="b"/><path d="M13.2 13.6h3.6L15 16.2Z" class="k"/><rect x="7.5" y="25" width="15" height="45" rx="7.5" class="b"/><ellipse cx="15" cy="50" rx="3.6" ry="14" class="w"/><ellipse cx="11" cy="72" rx="4.6" ry="2.4" class="k"/><ellipse cx="19" cy="72" rx="4.6" ry="2.4" class="k"/></svg>n<span class="g">Gym</span></h1>
+      <p class="slogan">Spingiamo. Insieme.</p>
       <p>Le tue schede, i pesi, le ripetizioni e i recuperi. Accedi o crea un account per iniziare.</p>
       ${m ? `<div class="msg ${m.err ? "err" : ""}" role="alert">${esc(m.text)}</div>` : ""}
       <form id="auth-form" class="card">
