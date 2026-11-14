@@ -241,3 +241,17 @@ alter table public.programs add column if not exists train_days int[] not null d
 
 -- Scheda attiva: se una scheda è fissata, la home usa quella
 alter table public.programs add column if not exists pinned boolean not null default false;
+
+-- Promemoria per esercizio e per settimana
+create table if not exists public.routine_week_memos (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  routine_exercise_id uuid not null references public.routine_exercises(id) on delete cascade,
+  week int not null check (week >= 1),
+  memo text not null,
+  updated_at timestamptz not null default now(),
+  unique (routine_exercise_id, week)
+);
+alter table public.routine_week_memos enable row level security;
+create policy routine_week_memos_all on public.routine_week_memos for all to authenticated
+  using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()));

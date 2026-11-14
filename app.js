@@ -101,12 +101,34 @@ function startTimer(sec) {
   } catch {}
   timerEnd = Date.now() + sec * 1000;
   timerTotal = sec;
+  showTimer();
+}
+// Il recupero viene salvato sul telefono: se si spegne lo schermo o Android chiude l'app, riaprendo riprende da dove era
+const TIMER_KEY = "gym.timer";
+function saveTimer() {
+  try { localStorage.setItem(TIMER_KEY, JSON.stringify({ end: timerEnd, total: timerTotal })); } catch {}
+}
+function restoreTimer() {
+  let t = null;
+  try { t = JSON.parse(localStorage.getItem(TIMER_KEY) || "null"); } catch {}
+  if (!t || !state.active) return;
+  if (t.end > Date.now()) {
+    timerEnd = t.end;
+    timerTotal = t.total;
+    showTimer();
+  } else {
+    try { localStorage.removeItem(TIMER_KEY); } catch {}
+    if (Date.now() - t.end < 10 * 60000) toast("Il recupero è finito mentre l'app era chiusa");
+  }
+}
+function showTimer() {
+  saveTimer();
   const el = $("#timer");
   el.innerHTML = `
     <div class="t-track"><div class="t-fill" id="t-fill"></div></div>
     <div class="t-row">
       <span class="t-label">Recupero</span>
-      <strong class="t-time" id="t-time">${mmss(sec)}</strong>
+      <strong class="t-time" id="t-time">${mmss(Math.max(0, Math.ceil((timerEnd - Date.now()) / 1000)))}</strong>
       <button data-act="t-add" data-v="-15" aria-label="Togli 15 secondi">−15</button>
       <button data-act="t-add" data-v="15" aria-label="Aggiungi 15 secondi">+15</button>
       <button data-act="t-skip">Salta</button>
@@ -119,6 +141,7 @@ function startTimer(sec) {
 function stopTimer() {
   clearInterval(timerInt);
   timerInt = null;
+  try { localStorage.removeItem(TIMER_KEY); } catch {}
   $("#timer").hidden = true;
 }
 function tick() {
@@ -176,6 +199,10 @@ async function loadAll() {
     fetchAllRows("routine_week_sets"),
     sb.from("programs").select("*").order("created_at"),
   ]);
+  // promemoria per settimana: memos[settimana] = testo (se la tabella non risponde, l'app funziona lo stesso)
+  const memoRows = await fetchAllRows("routine_week_memos").catch(() => []);
+  const byMemo = {};
+  memoRows.forEach((m) => ((byMemo[m.routine_exercise_id] ||= {})[m.week] = m.memo));
   if (ex.error || ro.error || pr.error) throw ex.error || ro.error || pr.error;
   // carichi per settimana: weeks[settimana][numero serie - 1] = {weight, reps}
   const byItem = {};
@@ -190,7 +217,7 @@ async function loadAll() {
     items: re
       .filter((i) => i.routine_id === r.id)
       .sort((a, b) => a.position - b.position)
-      .map((i) => ({ ...i, weeks: byItem[i.id] || {} })),
+      .map((i) => ({ ...i, weeks: byItem[i.id] || {}, memos: byMemo[i.id] || {} })),
   }));
 }
 
@@ -305,7 +332,7 @@ async function startWorkout(routineId) {
       rest: it.rest_seconds,
       targets,
       note: it.notes || "",
-      memo: it.memo || "",
+      memo: it.memos?.[week] || "",
       prevLabel: earlier ? `Settimana ${earlier}` : "",
       prev: earlier ? it.weeks[earlier].filter(Boolean).map((p) => ({ weight: p.weight, reps: p.reps })) : [],
       sets,
@@ -752,7 +779,7 @@ function dayExHTML(it, k = -1, showNote = true) {
         ${exImg(it.exercise_id) ? `<details class="how"><summary>Come si fa</summary>${imgPairHTML(exImg(it.exercise_id), exName(it.exercise_id))}</details>` : ""}
         ${showNote && it.notes ? `<p class="hint">${esc(it.notes)}</p>` : ""}
         <p class="hint">${it.target_sets} serie, recupero ${it.rest_seconds} s${it.rep_targets ? `, obiettivo ${esc(it.rep_targets.split("|").map((s) => s.trim()).join(", "))}` : ""}</p>
-        <label class="memo">Note<textarea rows="2" data-bind="memo" data-re="${it.id}" placeholder="Promemoria per questo esercizio">${esc(it.memo || "")}</textarea></label>`;
+        ${memoHTML(it.id, state.routines.find((r) => r.items.includes(it))?.current_week || 1)}`;
 }
 
 function dayHTML() {
@@ -834,7 +861,7 @@ function exHeadHTML(e, ei, k = -1) {
   return `<div class="card-h"><h3>${k >= 0 ? ltr(k) : ""}${esc(exName(e.exercise_id))}</h3><button class="link danger" data-act="w-del-ex" data-e="${ei}">Rimuovi</button></div>
       ${exImg(e.exercise_id) ? `<details class="how"><summary>Come si fa</summary>${imgPairHTML(exImg(e.exercise_id), exName(e.exercise_id))}</details>` : ""}
       ${prevTableHTML(e)}
-      ${e.reId ? `<label class="memo">Note<textarea rows="2" data-bind="memo" data-re="${e.reId}" placeholder="Promemoria per questo esercizio">${esc(e.memo)}</textarea></label>` : ""}`;
+      ${e.reId ? memoHTML(e.reId, state.active?.week || findItem(e.reId) && state.routines.find((r) => r.items.includes(findItem(e.reId)))?.current_week || 1) : ""}`;
 }
 
 function setBtnsHTML(ei, rest, canDel) {
@@ -1214,6 +1241,7 @@ document.addEventListener("click", (ev) => {
     case "t-add":
       timerEnd += Number(d.v) * 1000;
       timerTotal = Math.max(timerTotal, Math.ceil((timerEnd - Date.now()) / 1000));
+      saveTimer();
       tick();
       break;
     case "t-skip": stopTimer(); break;
@@ -1522,7 +1550,7 @@ document.addEventListener("input", (ev) => {
     case "r-item": state.view.routine.items[d.i][d.f] = Math.max(0, Math.round(num(el.value))); break;
     case "w-set": state.active.exercises[d.e].sets[d.s][d.f] = el.value; persistActive(); break;
     case "w-rest": grpOf(Number(d.e)).forEach((m) => (state.active.exercises[m].rest = Math.max(0, Math.round(num(el.value))))); persistActive(); break;
-    case "memo": setMemo(d.re, el.value); break;
+    case "memo": setMemo(d.re, el.value, Number(d.week)); break;
     case "prog-name": state.view.title = el.value; { const b = document.querySelector(".phead b"); if (b) b.textContent = el.value.trim() || "Nome della scheda"; } break;
     case "imp-prog": state.view.programName = el.value; break;
     case "imp-name": state.view.routines[d.r].name = el.value; break;
@@ -1743,23 +1771,38 @@ function guessProgramName(fileName) {
   return pick ? pick.charAt(0).toUpperCase() + pick.slice(1).toLowerCase() : "Scheda";
 }
 
+const findItem = (reId) => state.routines.flatMap((r) => r.items).find((i) => i.id === reId);
+function memoHTML(reId, week) {
+  const memos = findItem(reId)?.memos || {};
+  const past = Object.keys(memos).map(Number).filter((w) => w < week && memos[w]).sort((a, b) => b - a);
+  const last = past[0];
+  return `${last ? `<div class="memo-prev"><small>Nota della settimana ${last}</small><p>${esc(memos[last])}</p></div>` : ""}
+    ${past.length > 1 ? `<details class="memo-old"><summary>Note delle settimane prima (${past.length - 1})</summary>${past.slice(1).map((w) => `<p><b>Sett. ${w}</b> ${esc(memos[w])}</p>`).join("")}</details>` : ""}
+    <label class="memo">Note della settimana ${week}<textarea rows="2" data-bind="memo" data-re="${reId}" data-week="${week}" placeholder="Promemoria per questa settimana">${esc(memos[week] || "")}</textarea></label>`;
+}
+
 // Note per esercizio: mentre scrivi aggiorno lo stato, quando esci dal campo salvo nel database
-function setMemo(reId, text) {
-  state.routines.forEach((r) => r.items.forEach((it) => { if (it.id === reId) it.memo = text; }));
+function setMemo(reId, text, week) {
+  const it = findItem(reId);
+  if (it) (it.memos ||= {})[week] = text;
   const e = state.active?.exercises.find((x) => x.reId === reId);
   if (e) {
     e.memo = text;
     persistActive();
   }
 }
-async function saveMemo(reId, text) {
-  const { error } = await sb.from("routine_exercises").update({ memo: text.trim() || null }).eq("id", reId);
+async function saveMemo(reId, text, week) {
+  if (!week) return;
+  const t = text.trim();
+  const { error } = t
+    ? await sb.from("routine_week_memos").upsert({ user_id: state.user.id, routine_exercise_id: reId, week, memo: t }, { onConflict: "routine_exercise_id,week" })
+    : await sb.from("routine_week_memos").delete().eq("routine_exercise_id", reId).eq("week", week);
   toast(error ? "Non sono riuscito a salvare la nota" : "Nota salvata");
 }
 
 document.addEventListener("change", (ev) => {
   const el = ev.target;
-  if (el.dataset?.bind === "memo") saveMemo(el.dataset.re, el.value);
+  if (el.dataset?.bind === "memo") saveMemo(el.dataset.re, el.value, Number(el.dataset.week));
   if (el.id === "imp-file" && el.files?.[0]) {
     const f = el.files[0];
     el.value = "";
@@ -1790,6 +1833,7 @@ async function setUser(u) {
     try { await loadAll(); } catch (e) { console.error(e); toast("Non riesco a caricare i dati. Controlla la connessione."); }
     await loadLast().catch(() => {});
     syncActiveGroups();
+    restoreTimer();
   } else {
     state.active = null;
     state.view = null;

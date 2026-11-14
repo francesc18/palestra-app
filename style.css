@@ -490,3 +490,11 @@ table.grid .cur { background: var(--accent-soft); }
 .chev.open { transform: rotate(90deg); }
 .chev { transition: transform .15s; }
 .hday { border-top: 1px solid var(--line); padding: 12px 16px; display: grid; gap: 8px; }
+
+/* ---------- Promemoria per settimana ---------- */
+.memo-prev { background: var(--accent-soft); border-radius: 12px; padding: 8px 12px; display: grid; gap: 2px; }
+.memo-prev small { font-size: 12px; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: .04em; }
+.memo-prev p { font-size: 15px; white-space: pre-line; }
+.memo-old summary { cursor: pointer; color: var(--accent); font-weight: 600; font-size: 14px; }
+.memo-old p { font-size: 14px; color: var(--muted); margin-top: 4px; white-space: pre-line; }
+.memo-old b { color: var(--ink); margin-right: 4px; }
