@@ -255,3 +255,21 @@ create table if not exists public.routine_week_memos (
 alter table public.routine_week_memos enable row level security;
 create policy routine_week_memos_all on public.routine_week_memos for all to authenticated
   using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()));
+
+-- Schede condivise (fotografia senza carichi né note) + lettura per codice
+create table if not exists public.shared_programs (
+  code text primary key check (code ~ '^[A-Za-z0-9]{8,16}$'),
+  owner uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  name text not null check (char_length(name) <= 120),
+  payload jsonb not null check (pg_column_size(payload) < 300000),
+  created_at timestamptz not null default now()
+);
+alter table public.shared_programs enable row level security;
+create policy shared_programs_owner on public.shared_programs for all to authenticated
+  using (owner = (select auth.uid())) with check (owner = (select auth.uid()));
+create or replace function public.get_shared_program(p_code text)
+returns table (name text, payload jsonb, created_at timestamptz)
+language sql stable security definer set search_path = ''
+as $$ select s.name, s.payload, s.created_at from public.shared_programs s where s.code = p_code; $$;
+revoke all on function public.get_shared_program(text) from public, anon;
+grant execute on function public.get_shared_program(text) to authenticated;

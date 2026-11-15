@@ -498,3 +498,41 @@ table.grid .cur { background: var(--accent-soft); }
 .memo-old summary { cursor: pointer; color: var(--accent); font-weight: 600; font-size: 14px; }
 .memo-old p { font-size: 14px; color: var(--muted); margin-top: 4px; white-space: pre-line; }
 .memo-old b { color: var(--ink); margin-right: 4px; }
+
+/* ---------- Spinguino ---------- */
+.spg { --pb: #10282C; display: block; }
+.spg .b { fill: var(--pb); }
+.spg .w { fill: #fff; }
+.spg .k { fill: #FFB238; }
+.spg .sf { fill: none; stroke: var(--pb); stroke-width: 15; stroke-linecap: round; }
+.spg .se { fill: none; stroke: var(--pb); stroke-width: 3.4; stroke-linecap: round; }
+.spg .bar { fill: #8FA6AA; }
+.spg .pl { fill: #FFC247; }
+.spg .dr { fill: #7FD3DC; }
+.spg .c1 { fill: #FFC247; } .spg .c2 { fill: var(--accent); } .spg .c3 { fill: #E0472B; }
+.spg .zz { fill: currentColor; font-family: var(--display); font-weight: 700; font-size: 22px; opacity: .8; }
+.spg .zz.big { font-size: 30px; }
+@media (prefers-color-scheme: dark) { .card .spg, .done .spg { --pb: #2F5C66; } }
+
+/* nella card del riposo / settimana completata */
+.hero-pg { position: absolute; right: 2px; top: 6px; width: 112px; pointer-events: none; color: #fff; }
+.hero.rest h2, .hero.rest .hero-k { max-width: 66%; }
+.hero.rest > p { max-width: 70%; }
+
+/* card con Spinguino che parla */
+.card.hello { display: flex; gap: 12px; align-items: center; }
+.card.hello .spg { width: 92px; flex: none; }
+.card.hello b { font-size: 17px; }
+.card.hello p { font-size: 15px; color: var(--muted); margin-top: 4px; }
+
+/* riepilogo a fine allenamento */
+.card.done { text-align: center; justify-items: center; }
+.done .spg.big { width: 170px; margin: 0 auto -4px; }
+.done h2 { font-family: var(--display); font-size: 40px; font-weight: 700; line-height: 1; }
+.done-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; width: 100%; margin-top: 6px; }
+.done-stats div { background: var(--surface-2); border-radius: 14px; padding: 10px 4px; display: grid; }
+.done-stats b { font-family: var(--display); font-size: 30px; color: var(--accent); line-height: 1.05; }
+.done-stats small { font-size: 12px; color: var(--muted); }
+.recs { list-style: none; padding: 0; margin: 6px 0 0; display: grid; gap: 6px; width: 100%; text-align: left; }
+.recs li { background: var(--accent-soft); border-radius: 12px; padding: 8px 12px; font-size: 15px; }
+.recs span { color: var(--muted); font-size: 13px; }

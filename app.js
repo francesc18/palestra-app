@@ -386,6 +386,19 @@ async function finishWorkout() {
     })
   );
   if (!rows.length) return toast("Segna almeno una serie come completata");
+  // record: confronto con il carico più alto mai fatto prima su ogni esercizio
+  if (!state.histLoaded) await loadHistory().catch(() => {});
+  const prevBest = {};
+  (state.sets || []).forEach((x) => (prevBest[x.exercise_id] = Math.max(prevBest[x.exercise_id] || 0, Number(x.weight) || 0)));
+  const records = [];
+  rows.forEach((r) => {
+    const prev = prevBest[r.exercise_id];
+    const cur = records.find((x) => x.id === r.exercise_id);
+    if (prev > 0 && r.weight > prev && (!cur || r.weight > cur.weight)) {
+      if (cur) cur.weight = r.weight;
+      else records.push({ id: r.exercise_id, name: r.exercise_name, weight: r.weight, prev });
+    }
+  });
   // se è stato fatto meno di metà, chiedo se conta come giorno fatto (la settimana avanza solo in quel caso)
   let counts = true;
   if (a.routineId && a.week) {
@@ -443,14 +456,22 @@ async function finishWorkout() {
     }
   }
 
+  const stats = {
+    name: a.name,
+    week: counts ? a.week : null,
+    mins: Math.max(1, Math.round((Date.now() - a.startedAt) / 60000)),
+    sets: rows.length,
+    vol: rows.reduce((t, r) => t + r.weight * r.reps, 0),
+    records,
+    msg: msg === "Allenamento salvato" ? "" : msg,
+  };
   state.active = null;
   persistActive();
   stopTimer();
-  state.view = null;
-  state.tab = "history";
+  state.tab = "home";
   await loadHistory().catch(() => {});
   await loadLast().catch(() => {});
-  toast(msg);
+  state.view = { name: "done", stats };
   render();
 }
 
@@ -477,6 +498,9 @@ function render() {
   else if (v?.name === "program-new") { title = "Nuova scheda"; body = programFormHTML(false); back = true; }
   else if (v?.name === "program-edit") { title = "Modifica scheda"; body = programFormHTML(true); back = true; }
   else if (v?.name === "xlsx") { title = "Esporta in Excel"; body = exportHTML(); back = true; }
+  else if (v?.name === "share") { title = "Condividi scheda"; body = shareHTML(); back = true; }
+  else if (v?.name === "shared") { title = "Scheda condivisa"; body = sharedHTML(); back = true; }
+  else if (v?.name === "done") { title = "Ben fatto!"; body = doneHTML(); }
   else {
     const t = {
       home: ["Allenamento", homeHTML],
@@ -528,10 +552,44 @@ function goBack() {
     state.view = pid ? { name: "program", id: pid } : null;
   } else if (v?.name === "progress") state.view = { name: "day", id: v.id };
   else if (v?.name === "program-edit") state.view = { name: "program", id: v.id };
+  else if (v?.name === "share") state.view = { name: "program", id: v.id };
+  else if (v?.name === "shared") { clearPendingShare(); state.view = null; }
   else if (v?.name === "routine")
     state.view = v.routine.id ? { name: "day", id: v.routine.id } : v.routine.program_id ? { name: "program", id: v.routine.program_id } : null;
   else state.view = null;
   render();
+}
+
+/* ------------------------------------------------------------------ */
+/* Spinguino, la mascotte: pose "lift", "sleep", "cheer", "wave"       */
+/* ------------------------------------------------------------------ */
+function spinguino(pose = "wave", cls = "") {
+  const fl = {
+    lift: '<path d="M70 104C62 86 58 68 60 52" class="sf"/><path d="M130 104C138 86 142 68 140 52" class="sf"/>',
+    cheer: '<path d="M68 106C58 92 50 74 46 58" class="sf"/><path d="M132 106C142 92 150 74 154 58" class="sf"/>',
+    wave: '<path d="M62 116C54 128 54 142 60 152" class="sf"/><path d="M132 104C144 92 150 76 150 60" class="sf"/>',
+    sleep: '<path d="M62 116C54 128 54 142 60 152" class="sf"/><path d="M138 116C146 128 146 142 140 152" class="sf"/>',
+  }[pose];
+  const eyes =
+    pose === "sleep"
+      ? '<path d="M85 91q6 5 12 0M103 91q6 5 12 0" class="se"/>'
+      : pose === "cheer"
+      ? '<path d="M86 92q5-7 10 0M104 92q5-7 10 0" class="se"/>'
+      : '<circle cx="91" cy="90" r="4.6" class="b"/><circle cx="109" cy="90" r="4.6" class="b"/><circle cx="92.4" cy="88.6" r="1.4" fill="#fff"/><circle cx="110.4" cy="88.6" r="1.4" fill="#fff"/>';
+  const extra = {
+    lift: '<rect x="22" y="44" width="156" height="7" rx="3.5" class="bar"/><rect x="24" y="28" width="13" height="39" rx="4" class="pl"/><rect x="38" y="34" width="9" height="27" rx="3" class="pl"/><rect x="163" y="28" width="13" height="39" rx="4" class="pl"/><rect x="153" y="34" width="9" height="27" rx="3" class="pl"/>',
+    cheer: '<circle cx="34" cy="40" r="4" class="c1"/><rect x="160" y="30" width="8" height="8" rx="2" class="c2" transform="rotate(20 164 34)"/><circle cx="170" cy="70" r="3.5" class="c3"/><rect x="24" y="76" width="7" height="7" rx="2" class="c3" transform="rotate(-15 27 79)"/><circle cx="100" cy="30" r="3.5" class="c2"/>',
+    sleep: '<text x="132" y="62" class="zz">z</text><text x="148" y="44" class="zz big">Z</text>',
+    wave: "",
+  }[pose];
+  return `<svg class="spg ${cls}" viewBox="0 0 200 200" aria-hidden="true">${extra}${fl}
+    <ellipse cx="84" cy="177" rx="14" ry="7" class="k"/><ellipse cx="116" cy="177" rx="14" ry="7" class="k"/>
+    <ellipse cx="100" cy="132" rx="44" ry="47" class="b"/><circle cx="100" cy="88" r="33" class="b"/>
+    <ellipse cx="100" cy="138" rx="29" ry="36" class="w"/>
+    <path d="M78 92C78 76 90 72 100 80 110 72 122 76 122 92 122 104 112 110 100 110 88 110 78 104 78 92Z" class="w"/>
+    ${eyes}<path d="M92 97Q100 94 108 97L100 106Z" class="k"/>
+    ${pose === "lift" ? '<path d="M131 70C131 70 126 77 126 80A5 5 0 0 0 136 80C136 77 131 70 131 70Z" class="dr"/>' : ""}
+    ${pose === "cheer" ? '<path d="M93 112q7 5 14 0" class="se"/>' : ""}</svg>`;
 }
 
 /* ------------------------------------------------------------------ */
@@ -628,6 +686,188 @@ async function exportXlsx(ids) {
   toast("File Excel scaricato: lo trovi nei Download");
 }
 
+/* ------------------------------------------------------------------ */
+/* Condividere una scheda                                              */
+/* ------------------------------------------------------------------ */
+const SHARE_KEY = "gym.share";
+const clip = (v, n = 500) => (v === null || v === undefined ? null : String(v).slice(0, n));
+function randomCode(n = 10) {
+  const abc = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
+  const r = crypto.getRandomValues(new Uint8Array(n));
+  return Array.from(r, (b) => abc[b % abc.length]).join("");
+}
+// Crea la "fotografia" della scheda (esercizi, serie, ripetizioni, recuperi: niente carichi né note personali)
+async function shareProgram(pid) {
+  const p = state.programs.find((x) => x.id === pid);
+  const days = state.routines.filter((r) => r.program_id === pid);
+  if (!days.length) return toast("Aggiungi almeno un giorno prima di condividere");
+  const payload = {
+    v: 1,
+    name: p.name,
+    icon: p.icon,
+    color: p.color,
+    train_days: p.train_days,
+    days: days.map((r) => ({
+      name: r.name,
+      notes: r.notes,
+      icon: r.icon,
+      items: r.items.map((it) => {
+        const e = state.exercises.find((x) => x.id === it.exercise_id) || {};
+        return {
+          ex: { id: e.id, name: e.name, muscle_group: e.muscle_group, equipment: e.equipment, instructions: e.instructions, image_url: e.image_url },
+          target_sets: it.target_sets,
+          target_reps: it.target_reps,
+          rep_targets: it.rep_targets,
+          rest_seconds: it.rest_seconds,
+          notes: it.notes,
+          superset_id: it.superset_id,
+        };
+      }),
+    })),
+  };
+  let code, error;
+  for (let k = 0; k < 3; k++) {
+    code = randomCode();
+    ({ error } = await sb.from("shared_programs").insert({ code, owner: state.user.id, name: p.name.slice(0, 120), payload }));
+    if (!error) break;
+  }
+  if (error) throw error;
+  state.view = { name: "share", id: pid, url: `${location.origin}${location.pathname}#s=${code}`, pname: p.name };
+  render();
+}
+function shareHTML() {
+  const v = state.view;
+  return `<section class="card hello">${spinguino("wave")}<div><b>Spingiamo insieme!</b>
+      <p>Manda questo link. Chi lo apre, dopo l'accesso, può aggiungere una copia di «${esc(v.pname)}» alle sue schede: giorni, esercizi, serie, ripetizioni e recuperi. I tuoi carichi e le tue note restano tuoi.</p></div></section>
+    <label class="field">Link della scheda<input readonly value="${esc(v.url)}" onclick="this.select()"></label>
+    ${navigator.share ? `<button class="primary wide" data-act="share-send">Invia (WhatsApp, email…)</button>` : ""}
+    <button class="${navigator.share ? "ghost" : "primary"} wide" data-act="share-copy">Copia link</button>
+    <p class="hint">Se modifichi la scheda dopo averla condivisa, chi apre questo link riceve la versione di adesso: per mandare quella nuova crea un altro link.</p>`;
+}
+
+// Link aperto: il codice si conserva finché non si fa l'accesso
+function readShareFromHash() {
+  const m = location.hash.match(/^#s=([A-Za-z0-9]{8,16})$/);
+  if (!m) return false;
+  try { localStorage.setItem(SHARE_KEY, m[1]); } catch {}
+  history.replaceState(null, "", location.pathname + location.search);
+  return true;
+}
+function clearPendingShare() {
+  try { localStorage.removeItem(SHARE_KEY); } catch {}
+}
+async function openPendingShare() {
+  let code = null;
+  try { code = localStorage.getItem(SHARE_KEY); } catch {}
+  if (!code || !state.user) return;
+  const { data, error } = await sb.rpc("get_shared_program", { p_code: code });
+  const row = Array.isArray(data) ? data[0] : data;
+  if (error || !row?.payload?.days) {
+    clearPendingShare();
+    return toast("Questo link non è valido, oppure la scheda non è più condivisa");
+  }
+  state.view = { name: "shared", code, data: row.payload };
+  render();
+}
+function sharedHTML() {
+  const d = state.view.data;
+  const days = (d.days || []).slice(0, 14);
+  return `<section class="card hello">${spinguino("wave")}<div><b>Ti hanno condiviso una scheda!</b>
+      <p>Aggiungila alle tue schede: avrai giorni, esercizi, serie, ripetizioni e recuperi. I carichi li metti tu, si parte dalla settimana 1.</p></div></section>
+    <section class="phead ${pc(d.color)}"><span class="ptile big">${icon(d.icon)}</span><div><b>${esc(clip(d.name, 120) || "Scheda")}</b><small>${days.length} ${days.length === 1 ? "giorno" : "giorni"}</small></div></section>
+    ${days
+      .map((r, i) => {
+        const items = (r.items || []).slice(0, 40);
+        const groups = [...new Set(items.map((it) => clip(it.ex?.muscle_group, 40)).filter(Boolean))];
+        return `<div class="pcard dcard ${pc(d.color)}"><span class="ptile num">${i + 1}</span>
+          <span class="ptxt"><b>${esc(clip(r.name, 60) || `Giorno ${i + 1}`)}</b>
+          ${groups.length ? `<span class="gchips">${groups.slice(0, 4).map((g) => `<span class="gchip g g-${gSlug(g)}"><i></i>${esc(g)}</span>`).join("")}</span>` : ""}
+          <small>${items.map((it) => esc(clip(it.ex?.name, 60) || "Esercizio")).join(", ")}</small></span></div>`;
+      })
+      .join("")}
+    <button class="primary wide" data-act="shared-add">Aggiungi alle mie schede</button>
+    <button class="ghost wide" data-act="shared-no">No, grazie</button>`;
+}
+// Copia la scheda condivisa nel proprio account. Gli esercizi comuni si riusano;
+// quelli personali di chi l'ha condivisa si ricreano come esercizi tuoi (o si riusa un tuo esercizio con lo stesso nome).
+async function addSharedProgram() {
+  const d = state.view.data;
+  const uid = state.user.id;
+  const exId = {};
+  const days = (d.days || []).slice(0, 14);
+  for (const r of days)
+    for (const it of (r.items || []).slice(0, 40)) {
+      const ex = it.ex || {};
+      const key = ex.id || ex.name;
+      if (!key || exId[key]) continue;
+      const mine = state.exercises.find((e) => e.id === ex.id) || state.exercises.find((e) => e.name.toLowerCase() === String(ex.name || "").toLowerCase());
+      if (mine) { exId[key] = mine.id; continue; }
+      const { data, error } = await sb
+        .from("exercises")
+        .insert({ owner: uid, name: clip(ex.name, 80) || "Esercizio", muscle_group: clip(ex.muscle_group, 40) || "Altro", equipment: clip(ex.equipment, 40), instructions: clip(ex.instructions, 2000), image_url: /^(images\/|https:\/\/)/.test(ex.image_url || "") ? clip(ex.image_url, 500) : null })
+        .select()
+        .single();
+      if (error) throw error;
+      exId[key] = data.id;
+    }
+  const train = Array.isArray(d.train_days) ? d.train_days.map(Number).filter((n) => n >= 1 && n <= 7) : DEFAULT_TRAIN;
+  const pr = await sb
+    .from("programs")
+    .insert({ name: clip(d.name, 60) || "Scheda condivisa", user_id: uid, icon: PI[d.icon] ? d.icon : "dumbbell", color: COLORS.includes(d.color) ? d.color : "teal", train_days: train })
+    .select()
+    .single();
+  if (pr.error) throw pr.error;
+  for (const r of days) {
+    const ro = await sb
+      .from("routines")
+      .insert({ name: clip(r.name, 60) || "Giorno", user_id: uid, program_id: pr.data.id, notes: clip(r.notes, 2000), icon: PI[r.icon] ? r.icon : null, current_week: 1 })
+      .select()
+      .single();
+    if (ro.error) throw ro.error;
+    const gmap = {};
+    const rows = (r.items || []).slice(0, 40)
+      .filter((it) => exId[it.ex?.id || it.ex?.name])
+      .map((it, i) => ({
+        routine_id: ro.data.id,
+        user_id: uid,
+        exercise_id: exId[it.ex.id || it.ex.name],
+        position: i,
+        target_sets: Math.min(20, Math.max(1, Math.round(Number(it.target_sets)) || 3)),
+        target_reps: Math.min(100, Math.max(1, Math.round(Number(it.target_reps)) || 10)),
+        rest_seconds: Math.min(900, Math.max(0, Math.round(Number(it.rest_seconds)) || 90)),
+        rep_targets: clip(it.rep_targets, 300),
+        notes: clip(it.notes, 300),
+        superset_id: it.superset_id ? (gmap[it.superset_id] ||= crypto.randomUUID()) : null,
+      }));
+    if (rows.length) {
+      const ins = await sb.from("routine_exercises").insert(rows);
+      if (ins.error) throw ins.error;
+    }
+  }
+  clearPendingShare();
+  await loadAll();
+  state.view = { name: "program", id: pr.data.id };
+  render();
+  toast("Scheda aggiunta: spingiamo!");
+}
+
+/* ------------------------------------------------------------------ */
+/* Riepilogo a fine allenamento                                        */
+/* ------------------------------------------------------------------ */
+function doneHTML() {
+  const t = state.view.stats;
+  return `<section class="card done">
+      ${spinguino(t.records.length ? "lift" : "cheer", "big")}
+      <h2>${t.records.length ? "Nuovo record!" : "Allenamento finito!"}</h2>
+      <p class="hint">${esc(t.name)}${t.week ? `, settimana ${t.week}` : ""}</p>
+      <div class="done-stats"><div><b>${t.mins}</b><small>${t.mins === 1 ? "minuto" : "minuti"}</small></div><div><b>${t.sets}</b><small>serie</small></div><div><b>${Math.round(t.vol)}</b><small>kg sollevati</small></div></div>
+      ${t.records.length ? `<ul class="recs">${t.records.map((r) => `<li>🏆 <b>${esc(r.name)}</b> ${kg(r.weight)} kg <span>(prima ${kg(r.prev)} kg)</span></li>`).join("")}</ul>` : ""}
+      ${t.msg ? `<p class="hint">${esc(t.msg)}</p>` : ""}
+    </section>
+    <button class="primary wide" data-act="done-home">Torna alla home</button>
+    <button class="ghost wide" data-act="done-history">Vai allo storico</button>`;
+}
+
 function programFormHTML(edit) {
   const v = state.view;
   return `<section class="phead ${pc(v.color)}"><span class="ptile big">${icon(v.icon)}</span><div><b>${esc(v.title.trim() || "Nome della scheda")}</b><small>Anteprima</small></div></section>
@@ -703,7 +943,7 @@ function homeHTML() {
       </div></section>`;
     else
       h += `<section class="hero rest">
-      <span class="hero-ic">${icon("moon")}</span>
+      <span class="hero-pg">${spinguino(allDone ? "cheer" : "sleep")}</span>
       <small class="hero-k">${allDone ? "Settimana completata" : "Oggi riposo"}</small>
       <h2>Goditi il relax</h2>
       <p>${allDone ? "Hai fatto tutti gli allenamenti previsti: ottimo lavoro." : "Il corpo cresce quando riposi. Se hai voglia, puoi allenarti lo stesso."}</p>
@@ -715,7 +955,7 @@ function homeHTML() {
   }
   h += `<div class="sec-h"><h2>Le tue schede</h2><button class="link" data-act="new-program">Nuova scheda</button></div>`;
   if (!state.programs.length)
-    h += `<p class="empty">Non hai ancora nessuna scheda. Creane una, oppure importala da un file Excel.</p>`;
+    h += `<section class="card hello">${spinguino("wave")}<div><b>Ciao, sono Spinguino!</b><p>Non hai ancora nessuna scheda. Creane una, importala da un file Excel o aprila da un link che ti hanno mandato.</p></div></section>`;
   h += state.programs
     .map((p) => {
       const days = state.routines.filter((r) => r.program_id === p.id);
@@ -757,6 +997,7 @@ function programHTML() {
         <span class="chev" aria-hidden="true">›</span></button>` : ""}
     <button class="ghost wide" data-act="add-day">Aggiungi giorno</button>
     ${state.programs.length > 1 ? `<button class="ghost wide" data-act="prog-pin">${p.pinned ? "Non è più la scheda attiva" : "Usa questa come scheda attiva"}</button>` : ""}
+    ${days.length ? `<button class="ghost wide" data-act="prog-share">Condividi scheda</button>` : ""}
     ${days.length ? `<button class="ghost wide" data-act="xlsx-one">Esporta in Excel</button>` : ""}
     <div class="row"><button class="ghost" data-act="prog-edit">Modifica scheda</button><button class="danger-btn" data-act="prog-delete">Elimina scheda</button></div>`;
 }
@@ -1281,6 +1522,17 @@ document.addEventListener("click", (ev) => {
     case "xlsx-toggle": v.sel = v.sel.includes(d.id) ? v.sel.filter((x) => x !== d.id) : [...v.sel, d.id]; render(); break;
     case "xlsx-run": guard(() => exportXlsx(v.sel), "Non sono riuscito a creare il file Excel."); break;
     case "xlsx-one": guard(() => exportXlsx([v.id]), "Non sono riuscito a creare il file Excel."); break;
+    case "prog-share": guard(() => shareProgram(v.id), "Non sono riuscito a creare il link. Controlla la connessione."); break;
+    case "share-send":
+      navigator.share?.({ title: "SpinGym", text: `Ti condivido la mia scheda «${v.pname}» su SpinGym. Spingiamo!`, url: v.url }).catch(() => {});
+      break;
+    case "share-copy":
+      navigator.clipboard?.writeText(v.url).then(() => toast("Link copiato"), () => toast("Non riesco a copiarlo: tieni premuto sul link e copialo"));
+      break;
+    case "shared-add": guard(addSharedProgram, "Non sono riuscito ad aggiungere la scheda. Riprova."); break;
+    case "shared-no": clearPendingShare(); state.view = null; render(); break;
+    case "done-home": state.view = null; state.tab = "home"; render(); break;
+    case "done-history": state.view = null; state.tab = "history"; render(); break;
     case "prog-pin": {
       const p = state.programs.find((x) => x.id === v.id);
       const make = !p.pinned;
@@ -1826,6 +2078,11 @@ function syncActiveGroups() {
   if (changed) persistActive();
 }
 
+readShareFromHash();
+window.addEventListener("hashchange", () => {
+  if (readShareFromHash() && state.user) openPendingShare().catch(() => {});
+});
+
 async function setUser(u) {
   state.user = u;
   if (u) {
@@ -1834,6 +2091,9 @@ async function setUser(u) {
     await loadLast().catch(() => {});
     syncActiveGroups();
     restoreTimer();
+    render();
+    await openPendingShare().catch(() => {});
+    return;
   } else {
     state.active = null;
     state.view = null;
