@@ -536,3 +536,39 @@ table.grid .cur { background: var(--accent-soft); }
 .recs { list-style: none; padding: 0; margin: 6px 0 0; display: grid; gap: 6px; width: 100%; text-align: left; }
 .recs li { background: var(--accent-soft); border-radius: 12px; padding: 8px 12px; font-size: 15px; }
 .recs span { color: var(--muted); font-size: 13px; }
+
+/* ---------- Istruzioni a passaggi ---------- */
+.howto { display: grid; gap: 8px; margin: 4px 0 0; }
+.howto div { display: grid; gap: 2px; }
+.howto dt { font-size: 12px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: var(--accent); }
+.howto dd { margin: 0; font-size: 15px; line-height: 1.45; }
+.howto .warn { background: color-mix(in srgb, #FFC247 22%, transparent); border-radius: 10px; padding: 8px 10px; }
+.howto .warn dt { color: #9A6A00; }
+@media (prefers-color-scheme: dark) { .howto .warn dt { color: #FFC247; } }
+.how .howto { margin-top: 10px; }
+
+/* ---------- Strumenti ---------- */
+.seg { display: grid; grid-template-columns: 1fr 1fr; background: var(--surface); border-radius: 14px; padding: 4px; gap: 4px; }
+.seg button { border: 0; background: transparent; border-radius: 10px; padding: 10px; font-weight: 700; color: var(--muted); }
+.seg button.on { background: var(--accent); color: var(--accent-ink); }
+.field .chips { flex-wrap: wrap; overflow: visible; }
+.field .chips button { border: 0; border-radius: 99px; padding: 9px 14px; background: var(--surface); font-weight: 700; font-size: 15px; color: var(--ink); }
+.field .chips button.on { background: var(--ink); color: var(--bg); }
+.trio.two { grid-template-columns: 1fr 1fr; }
+.barviz { display: flex; align-items: center; justify-content: center; height: 96px; margin: 4px 0 2px; }
+.barviz .side { display: flex; align-items: center; height: 100%; gap: 2px; }
+.barviz .side i { display: block; background: var(--pc); border-radius: 4px; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .18); }
+.barviz .shaft { width: 46%; height: 8px; background: #9AA5A8; border-radius: 4px; }
+.barviz .side.l { justify-content: flex-end; flex: 1; } .barviz .side.r { flex: 1; }
+.barviz .side.l::after, .barviz .side.r::before { content: ""; width: 6px; height: 22px; background: #7E8A8D; border-radius: 2px; }
+.pl-per { text-align: center; font-size: 18px; }
+.pl-per b { font-family: var(--display); font-size: 26px; color: var(--accent); }
+#tool-out .hint { text-align: center; }
+.rm-big { text-align: center; display: grid; }
+.rm-big small { font-size: 12px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.rm-big b { font-family: var(--display); font-size: 48px; color: var(--accent); line-height: 1.05; }
+.pt.rm td:first-child { width: 56px; }
+.rm-line { font-size: 15px; display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; }
+.rm-line b { font-size: 17px; color: var(--accent); }
+.rm-line span { color: var(--muted); font-size: 13px; }
+.tool-link { justify-self: start; font-size: 14px; }

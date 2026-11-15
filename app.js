@@ -57,6 +57,22 @@ function toast(msg) {
 const gSlug = (g) => String(g || "altro").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z]/g, "") || "altro";
 const gCls = (exId) => `g g-${gSlug(state.exercises.find((e) => e.id === exId)?.muscle_group)}`;
 const exImg = (id) => state.exercises.find((e) => e.id === id)?.image_url || "";
+const exInstr = (id) => state.exercises.find((e) => e.id === id)?.instructions || "";
+const exEquip = (id) => state.exercises.find((e) => e.id === id)?.equipment || "";
+// Istruzioni: righe "Posizione: …", "Esecuzione: …", "Attenzione: …" diventano passaggi; altrimenti testo semplice
+function howToHTML(text) {
+  const lines = String(text || "").split("\n").map((l) => l.trim()).filter(Boolean);
+  if (!lines.length) return "";
+  const steps = lines.map((l) => l.match(/^([A-Za-zÀ-ÿ ]{3,20}):\s*(.+)$/));
+  if (steps.every(Boolean))
+    return `<dl class="howto">${steps.map((m) => `<div class="${m[1].toLowerCase() === "attenzione" ? "warn" : ""}"><dt>${esc(m[1])}</dt><dd>${esc(m[2])}</dd></div>`).join("")}</dl>`;
+  return `<p class="howto-p">${esc(lines.join(" "))}</p>`;
+}
+// "Come si fa": foto + passaggi (si apre al tocco)
+function howBoxHTML(id) {
+  if (!exImg(id) && !exInstr(id)) return "";
+  return `<details class="how"><summary>Come si fa</summary>${exImg(id) ? imgPairHTML(exImg(id), exName(id)) : ""}${howToHTML(exInstr(id))}</details>`;
+}
 const exName = (id) => state.exercises.find((e) => e.id === id)?.name ?? "Esercizio eliminato";
 const activeKey = () => `gym.active.${state.user?.id}`;
 const persistActive = () => {
@@ -501,6 +517,7 @@ function render() {
   else if (v?.name === "share") { title = "Condividi scheda"; body = shareHTML(); back = true; }
   else if (v?.name === "shared") { title = "Scheda condivisa"; body = sharedHTML(); back = true; }
   else if (v?.name === "done") { title = "Ben fatto!"; body = doneHTML(); }
+  else if (v?.name === "tools") { title = v.tab === "plates" ? "Calcola dischi" : "Massimale stimato"; body = toolsHTML(); back = true; }
   else {
     const t = {
       home: ["Allenamento", homeHTML],
@@ -553,6 +570,7 @@ function goBack() {
   } else if (v?.name === "progress") state.view = { name: "day", id: v.id };
   else if (v?.name === "program-edit") state.view = { name: "program", id: v.id };
   else if (v?.name === "share") state.view = { name: "program", id: v.id };
+  else if (v?.name === "tools") state.view = v.from || null;
   else if (v?.name === "shared") { clearPendingShare(); state.view = null; }
   else if (v?.name === "routine")
     state.view = v.routine.id ? { name: "day", id: v.routine.id } : v.routine.program_id ? { name: "program", id: v.routine.program_id } : null;
@@ -1017,7 +1035,7 @@ const ltr = (k) => `<i class="ltr">${LTR[k]}</i>`;
 
 function dayExHTML(it, k = -1, showNote = true) {
   return `<h3>${k >= 0 ? ltr(k) : ""}${esc(exName(it.exercise_id))}</h3>
-        ${exImg(it.exercise_id) ? `<details class="how"><summary>Come si fa</summary>${imgPairHTML(exImg(it.exercise_id), exName(it.exercise_id))}</details>` : ""}
+        ${howBoxHTML(it.exercise_id)}
         ${showNote && it.notes ? `<p class="hint">${esc(it.notes)}</p>` : ""}
         <p class="hint">${it.target_sets} serie, recupero ${it.rest_seconds} s${it.rep_targets ? `, obiettivo ${esc(it.rep_targets.split("|").map((s) => s.trim()).join(", "))}` : ""}</p>
         ${memoHTML(it.id, state.routines.find((r) => r.items.includes(it))?.current_week || 1)}`;
@@ -1100,7 +1118,8 @@ function prevTableHTML(e) {
 
 function exHeadHTML(e, ei, k = -1) {
   return `<div class="card-h"><h3>${k >= 0 ? ltr(k) : ""}${esc(exName(e.exercise_id))}</h3><button class="link danger" data-act="w-del-ex" data-e="${ei}">Rimuovi</button></div>
-      ${exImg(e.exercise_id) ? `<details class="how"><summary>Come si fa</summary>${imgPairHTML(exImg(e.exercise_id), exName(e.exercise_id))}</details>` : ""}
+      ${howBoxHTML(e.exercise_id)}
+      ${/bilanciere/i.test(exEquip(e.exercise_id)) ? `<button class="link tool-link" data-act="tool-plates" data-e="${ei}">🏋️ Dischi da caricare</button>` : ""}
       ${prevTableHTML(e)}
       ${e.reId ? memoHTML(e.reId, state.active?.week || findItem(e.reId) && state.routines.find((r) => r.items.includes(findItem(e.reId)))?.current_week || 1) : ""}`;
 }
@@ -1218,6 +1237,14 @@ function imgPairHTML(url, name) {
 
 // Grafico dell'esercizio: dalla scheda (settimane) se c'è, altrimenti dallo storico (date)
 function exChartHTML(e) {
+  const b = bestSetOf(e.id);
+  const rm = b
+    ? `<p class="rm-line">Massimale stimato <b>${kg(Math.round(b.v * 2) / 2)} kg</b> <span>(da ${kg(b.w)} kg × ${b.r})</span>
+        <button class="link" data-act="tool-rm" data-w="${b.w}" data-r="${b.r}">Tabella</button></p>`
+    : "";
+  return exChartInner(e).replace("</section>", `${rm}</section>`) || (rm ? `<section class="card"><h3>Progressi</h3>${rm}</section>` : "");
+}
+function exChartInner(e) {
   const items = state.routines.flatMap((r) => r.items.filter((it) => it.exercise_id === e.id).map((it) => ({ it, r })));
   const best = items.map((x) => ({ ...x, wp: weekPoints(x.it) })).sort((a, b) => b.wp.pts.length - a.wp.pts.length)[0];
   if (best && best.wp.pts.length >= 2)
@@ -1250,7 +1277,7 @@ function exerciseHTML() {
       ${imgPairHTML(e.image_url, e.name)}
       <h3>${esc(e.name)}</h3>
       <div class="row"><span class="tag">${esc(e.muscle_group)}</span>${e.equipment ? `<span class="tag">${esc(e.equipment)}</span>` : ""}</div>
-      <p>${esc(e.instructions || "Nessuna descrizione.")}</p>
+      ${howToHTML(e.instructions) || `<p class="hint">Nessuna descrizione.</p>`}
     </article>
     ${exChartHTML(e)}
     ${e.owner === state.user.id ? `<button class="danger-btn wide" data-act="ex-delete" data-id="${e.id}">Elimina esercizio</button>` : ""}`;
@@ -1408,10 +1435,115 @@ function historyHTML() {
   return h;
 }
 
+/* ------------------------------------------------------------------ */
+/* Strumenti: calcolatore dei dischi e massimale stimato               */
+/* ------------------------------------------------------------------ */
+const PLATES = [25, 20, 15, 10, 5, 2.5, 1.25];
+const PLATE_STYLE = { 25: ["#D9482B", 100, 15], 20: ["#2F6FDB", 100, 14], 15: ["#E8B400", 90, 13], 10: ["#23864B", 78, 12], 5: ["#F4F4F2", 58, 10], 2.5: ["#D9482B", 46, 8], 1.25: ["#9AA5A8", 38, 7] };
+const TOOL_KEY = "gym.tools";
+function toolPrefs() {
+  let p = {};
+  try { p = JSON.parse(localStorage.getItem(TOOL_KEY) || "{}"); } catch {}
+  return { bar: p.bar ?? 20, avail: Array.isArray(p.avail) ? p.avail : [...PLATES] };
+}
+function saveToolPrefs(v) {
+  try { localStorage.setItem(TOOL_KEY, JSON.stringify({ bar: v.bar, avail: v.avail })); } catch {}
+}
+// Dischi per lato con il minor numero di dischi (a coppie: uno per lato). null se il peso non è componibile.
+function platesFor(perSide, avail) {
+  const U = 0.25, n = Math.round(perSide / U);
+  if (n < 0 || Math.abs(n * U - perSide) > 1e-6 || n > 4000) return null;
+  const coins = avail.map((p) => Math.round(p / U)).filter((c) => c > 0);
+  const best = new Array(n + 1).fill(Infinity), pick = new Array(n + 1).fill(0);
+  best[0] = 0;
+  for (let x = 1; x <= n; x++) for (const c of coins) if (c <= x && best[x - c] + 1 < best[x]) { best[x] = best[x - c] + 1; pick[x] = c; }
+  if (best[n] === Infinity) return null;
+  const out = [];
+  for (let x = n; x > 0; x -= pick[x]) out.push(pick[x] * U);
+  return out.sort((a, b) => b - a);
+}
+function barHTML(side) {
+  const pl = (p) => { const [c, h, w] = PLATE_STYLE[p] || ["#888", 50, 8]; return `<i style="--pc:${c};height:${h}%;width:${w}px" title="${kg(p)} kg"></i>`; };
+  return `<div class="barviz" aria-hidden="true"><span class="side l">${[...side].reverse().map(pl).join("")}</span><span class="shaft"></span><span class="side r">${side.map(pl).join("")}</span></div>`;
+}
+function platesResultHTML(v) {
+  const t = num(v.target), bar = num(v.bar);
+  if (!(t > 0)) return `<p class="hint">Scrivi il peso totale che vuoi caricare.</p>`;
+  if (t < bar) return `<p class="msg err">Il peso è più basso del bilanciere (${kg(bar)} kg).</p>`;
+  const per = (t - bar) / 2;
+  const ok = platesFor(per, v.avail);
+  if (ok)
+    return `${barHTML(ok)}<p class="pl-per">Per lato: <b>${ok.length ? ok.map((p) => `${kg(p)}`).join(" + ") + " kg" : "nessun disco"}</b></p>
+      <p class="hint">Bilanciere ${kg(bar)} kg + ${kg(per)} kg per lato = ${kg(t)} kg</p>`;
+  // non componibile esattamente: il più vicino sotto e sopra
+  let lo = null, hi = null;
+  for (let k = 1; k <= 200 && (!lo || !hi); k++) {
+    const d = k * 0.25;
+    if (!lo && per - d >= 0 && platesFor(per - d, v.avail)) lo = per - d;
+    if (!hi && platesFor(per + d, v.avail)) hi = per + d;
+  }
+  const opt = (p) => (p === null ? "" : `<button class="ghost" data-act="pl-set" data-v="${bar + p * 2}">${kg(bar + p * 2)} kg</button>`);
+  return `<p class="msg err">Con i dischi che hai non arrivi esattamente a ${kg(t)} kg.</p>
+    <p class="hint">I pesi più vicini che puoi caricare:</p><div class="row">${opt(lo)}${opt(hi)}</div>`;
+}
+function rmResultHTML(v) {
+  const w = num(v.w), r = Math.round(num(v.r));
+  if (!(w > 0) || !(r > 0)) return `<p class="hint">Scrivi peso e ripetizioni di una serie fatta bene, fino a cedimento o quasi.</p>`;
+  const rm = r === 1 ? w : e1rm(w, r);
+  const rows = [100, 95, 90, 85, 80, 75, 70, 65, 60]
+    .map((p) => {
+      const reps = p === 100 ? 1 : Math.max(1, Math.round(30 * (100 / p - 1)));
+      return `<tr><td>${p}%</td><td><b>${kg(Math.round((rm * p) / 100 * 2) / 2)}</b> kg</td><td>≈ ${reps} rip.</td></tr>`;
+    })
+    .join("");
+  return `<div class="rm-big"><small>Massimale stimato</small><b>${kg(Math.round(rm * 2) / 2)} kg</b></div>
+    ${r > 12 ? `<p class="msg err">Con più di 12 ripetizioni la stima è poco precisa: usa una serie più pesante.</p>` : ""}
+    <table class="pt rm"><thead><tr><th>%</th><th>Peso</th><th>Ripetizioni</th></tr></thead><tbody>${rows}</tbody></table>
+    <p class="hint">Stima con la formula di Epley. È un riferimento per scegliere i carichi, non un test del massimale.</p>`;
+}
+function toolsHTML() {
+  const v = state.view;
+  const tab = (k, l) => `<button class="${v.tab === k ? "on" : ""}" data-act="tool-tab" data-v="${k}">${l}</button>`;
+  const body =
+    v.tab === "plates"
+      ? `<label class="field">Peso totale (kg)<input type="number" inputmode="decimal" step="any" min="0" value="${esc(v.target)}" data-bind="pl-target" placeholder="Es. 77,5"></label>
+        <div class="field"><span class="lbl">Bilanciere</span><div class="chips">${[20, 15, 10, 0].map((b) => `<button class="${num(v.bar) === b ? "on" : ""}" data-act="pl-bar" data-v="${b}">${b ? `${b} kg` : "Senza"}</button>`).join("")}</div></div>
+        <div class="field"><span class="lbl">Dischi che hai in palestra</span><div class="chips">${PLATES.map((p) => `<button class="${v.avail.includes(p) ? "on" : ""}" data-act="pl-avail" data-v="${p}">${kg(p)}</button>`).join("")}</div></div>
+        <section class="card" id="tool-out">${platesResultHTML(v)}</section>`
+      : `<div class="trio two"><label>Peso (kg)<input type="number" inputmode="decimal" step="any" min="0" value="${esc(v.w)}" data-bind="rm-w"></label>
+          <label>Ripetizioni<input type="number" inputmode="numeric" min="1" value="${esc(v.r)}" data-bind="rm-r"></label></div>
+        <section class="card" id="tool-out">${rmResultHTML(v)}</section>`;
+  return `<div class="seg">${tab("plates", "Dischi")}${tab("rm", "Massimale")}</div>${body}`;
+}
+function openTools(tab, pre = {}) {
+  const p = toolPrefs();
+  state.view = { name: "tools", tab, from: state.view, bar: p.bar, avail: p.avail, target: "", w: "", r: "", ...pre };
+  render();
+}
+const updateTool = () => {
+  const o = $("#tool-out");
+  if (o) o.innerHTML = state.view.tab === "plates" ? platesResultHTML(state.view) : rmResultHTML(state.view);
+};
+// miglior serie (massimale stimato più alto) di un esercizio, dalla scheda e dallo storico
+function bestSetOf(exId) {
+  let best = null;
+  const take = (w, r) => {
+    w = Number(w); r = Number(r);
+    if (w > 0 && r > 0 && r <= 15) { const v = e1rm(w, r); if (!best || v > best.v) best = { w, r, v }; }
+  };
+  state.routines.forEach((ro) => ro.items.filter((it) => it.exercise_id === exId).forEach((it) => Object.values(it.weeks || {}).forEach((ss) => ss.filter(Boolean).forEach((x) => take(x.weight, x.reps)))));
+  (state.sets || []).filter((x) => x.exercise_id === exId).forEach((x) => take(x.weight, x.reps));
+  return best;
+}
+
 function profileHTML() {
   return `<section class="card">
       <h3>Account</h3><p class="hint">${esc(state.user.email)}</p>
       <button class="ghost wide" data-act="logout">Esci</button></section>
+    <section class="card">
+      <h3>Strumenti</h3>
+      <p class="hint">Quali dischi mettere sul bilanciere e il massimale stimato da una serie.</p>
+      <div class="row"><button class="ghost" data-act="tool-open" data-v="plates">Calcola dischi</button><button class="ghost" data-act="tool-open" data-v="rm">Massimale</button></div></section>
     <section class="card">
       <h3>Aggiornamenti</h3>
       <p class="hint">Se non vedi le novità dell'app, tocca qui: scarica di nuovo tutti i file. I tuoi dati non si toccano.</p>
@@ -1522,6 +1654,24 @@ document.addEventListener("click", (ev) => {
     case "xlsx-toggle": v.sel = v.sel.includes(d.id) ? v.sel.filter((x) => x !== d.id) : [...v.sel, d.id]; render(); break;
     case "xlsx-run": guard(() => exportXlsx(v.sel), "Non sono riuscito a creare il file Excel."); break;
     case "xlsx-one": guard(() => exportXlsx([v.id]), "Non sono riuscito a creare il file Excel."); break;
+    case "tool-open": openTools(d.v); break;
+    case "tool-tab": v.tab = d.v; render(); break;
+    case "tool-plates": {
+      const ex = state.active?.exercises[Number(d.e)];
+      const s = ex?.sets.find((x) => !x.done) || ex?.sets[0];
+      openTools("plates", { target: s?.weight || "" });
+      break;
+    }
+    case "tool-rm": openTools("rm", { w: d.w, r: d.r }); break;
+    case "pl-bar": v.bar = Number(d.v); saveToolPrefs(v); render(); break;
+    case "pl-avail": {
+      const p = Number(d.v);
+      v.avail = v.avail.includes(p) ? v.avail.filter((x) => x !== p) : [...v.avail, p].sort((a, b) => b - a);
+      saveToolPrefs(v);
+      render();
+      break;
+    }
+    case "pl-set": v.target = String(d.v); render(); break;
     case "prog-share": guard(() => shareProgram(v.id), "Non sono riuscito a creare il link. Controlla la connessione."); break;
     case "share-send":
       navigator.share?.({ title: "SpinGym", text: `Ti condivido la mia scheda «${v.pname}» su SpinGym. Spingiamo!`, url: v.url }).catch(() => {});
@@ -1803,6 +1953,9 @@ document.addEventListener("input", (ev) => {
     case "w-set": state.active.exercises[d.e].sets[d.s][d.f] = el.value; persistActive(); break;
     case "w-rest": grpOf(Number(d.e)).forEach((m) => (state.active.exercises[m].rest = Math.max(0, Math.round(num(el.value))))); persistActive(); break;
     case "memo": setMemo(d.re, el.value, Number(d.week)); break;
+    case "pl-target": state.view.target = el.value; updateTool(); break;
+    case "rm-w": state.view.w = el.value; updateTool(); break;
+    case "rm-r": state.view.r = el.value; updateTool(); break;
     case "prog-name": state.view.title = el.value; { const b = document.querySelector(".phead b"); if (b) b.textContent = el.value.trim() || "Nome della scheda"; } break;
     case "imp-prog": state.view.programName = el.value; break;
     case "imp-name": state.view.routines[d.r].name = el.value; break;
