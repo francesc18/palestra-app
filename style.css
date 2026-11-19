@@ -572,3 +572,6 @@ table.grid .cur { background: var(--accent-soft); }
 .rm-line b { font-size: 17px; color: var(--accent); }
 .rm-line span { color: var(--muted); font-size: 13px; }
 .tool-link { justify-self: start; font-size: 14px; }
+
+/* ---------- Oggi salto ---------- */
+.hero-skip { justify-self: center; background: transparent; border: 0; color: #fff; opacity: .85; font-size: 14px; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; padding: 8px 4px 0; }

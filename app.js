@@ -915,6 +915,15 @@ function sessionsThisWeek(days) {
 
 // Giorno "di oggi": quello rimasto più indietro (settimana più bassa); a parità, il primo della scheda.
 // Così funziona anche se i giorni si fanno in ordine sparso.
+// "Oggi salto": si ricorda solo per oggi, su questo telefono. Il giorno non viene segnato come fatto.
+const skipKey = () => `gym.skip.${state.user?.id}`;
+function skippedToday() {
+  try { return localStorage.getItem(skipKey()) === dkey(new Date()); } catch { return false; }
+}
+function setSkip(on) {
+  try { on ? localStorage.setItem(skipKey(), dkey(new Date())) : localStorage.removeItem(skipKey()); } catch {}
+}
+
 function nextDay(p) {
   const days = state.routines.filter((r) => r.program_id === p.id);
   if (!days.length) return null;
@@ -947,7 +956,19 @@ function homeHTML() {
     const week = planned
       ? `Questa settimana: ${done} su ${planned} allenamenti`
       : `Questa settimana: ${done} ${done === 1 ? "allenamento" : "allenamenti"}`;
-    if (trainToday && !allDone)
+    const skipped = trainToday && !allDone && skippedToday();
+    if (skipped)
+      h += `<section class="hero rest">
+      <span class="hero-pg">${spinguino("sleep")}</span>
+      <small class="hero-k">Oggi salti</small>
+      <h2>Nessun problema</h2>
+      <p>${esc(hd.name)} resta da fare: te lo ripropongo alla prossima occasione.</p>
+      <p class="hero-wk">${week}</p>
+      <div class="hero-row">
+        <button class="hero-btn" data-act="skip-undo">Ho cambiato idea</button>
+        <button class="hero-lnk" data-act="open-program" data-id="${hp.id}">Altro giorno</button>
+      </div></section>`;
+    else if (trainToday && !allDone)
       h += `<section class="hero ${pc(hp.color)}">
       <span class="hero-ic">${icon(hd.icon || hp.icon)}</span>
       <small class="hero-k">Oggi tocca</small>
@@ -958,7 +979,8 @@ function homeHTML() {
       <div class="hero-row">
         <button class="hero-btn" data-act="start" data-id="${hd.id}" ${a ? "disabled" : ""}>Inizia</button>
         <button class="hero-lnk" data-act="open-program" data-id="${hp.id}">Cambia giorno</button>
-      </div></section>`;
+      </div>
+      ${a ? "" : `<button class="hero-skip" data-act="skip-today">Oggi salto l'allenamento</button>`}</section>`;
     else
       h += `<section class="hero rest">
       <span class="hero-pg">${spinguino(allDone ? "cheer" : "sleep")}</span>
@@ -1672,6 +1694,8 @@ document.addEventListener("click", (ev) => {
       break;
     }
     case "pl-set": v.target = String(d.v); render(); break;
+    case "skip-today": setSkip(true); render(); toast("Va bene, oggi riposo. Ci vediamo alla prossima!"); break;
+    case "skip-undo": setSkip(false); render(); break;
     case "prog-share": guard(() => shareProgram(v.id), "Non sono riuscito a creare il link. Controlla la connessione."); break;
     case "share-send":
       navigator.share?.({ title: "SpinGym", text: `Ti condivido la mia scheda «${v.pname}» su SpinGym. Spingiamo!`, url: v.url }).catch(() => {});
